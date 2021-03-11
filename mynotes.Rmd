@@ -1,0 +1,15 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+edge.data<- load('counts-edgeR2.Rdata')
+cell.info <- read.delim("cell_info2.txt", header=TRUE,row.names=1)
+# the boxplot shows that kid1= F, kid2= M, kid3 = M
+y.keep$samples$sex <- factor(cell.info$biorep, 
+                             levels = c("kid1","kid2","kid3"), 
+                             labels = c("F", "M", "M"))
+cm.MK<- y.keep$counts
+```
+
