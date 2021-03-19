@@ -7,9 +7,97 @@ output: html_notebook
 edge.data<- load('counts-edgeR2.Rdata')
 cell.info <- read.delim("cell_info2.txt", header=TRUE,row.names=1)
 # the boxplot shows that kid1= F, kid2= M, kid3 = M
-y.keep$samples$sex <- factor(cell.info$biorep, 
-                             levels = c("kid1","kid2","kid3"), 
-                             labels = c("F", "M", "M"))
+#y.keep$samples$sex <- factor(cell.info$biorep, 
+#                             levels = c("kid1","kid2","kid3"), 
+#                             labels = c("F", "M", "M"))
+# change row names to gene symbol 
 cm.MK<- y.keep$counts
+
+
+```
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(SingleCellExperiment)
+library(scater)
+
+data.sce<-SingleCellExperiment(assays = list(counts = cm.MK))
+qcstats <- perCellQCMetrics(data.sce,subsets=list(Mito=1:100))
+qcfilter <- quickPerCellQC(qcstats, percent_subsets =  c("subsets_Mito_percent"))
+data.sce <- data.sce[,!qcfilter$discard]
+cm.new <-cm.MK[,colnames(data.sce)]
+
+mk <- CreateSeuratObject(counts = cm.new, min.cells = 3, min.features = 200)
+mk
+
+
+
+```
+
+```{r}
+mk <- NormalizeData(mk)
+all.genes <- rownames(mk)
+mk <- ScaleData(mk,features = all.genes)
+
+mk <- RunPCA(mk, features = VariableFeatures(object = mk))
+mk <- FindNeighbors(mk, dims = 1:10)
+mk <- FindClusters(mk, resolution = 0.5)
+
+mk <- RunUMAP(mk, dims = 1:10)
+DimPlot(mk, reduction = "umap", label = TRUE)
+```
+
+
+```{r}
+row.names(mk)<-y.keep[row.names(mk), ]$genes$Symbol
+# find all markers of cluster 1
+cluster1.markers <- FindMarkers(mk, ident.1 = 2, min.pct = 0.25)
+head(cluster1.markers, n = 5)
+
+
+# find markers for every cluster compared to all remaining cells, report only the positive ones
+pbmc.markers <- FindAllMarkers(pbmc, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+pbmc.markers %>% group_by(cluster) %>% top_n(n = 2, wt = avg_log2FC)
+
+
+```
+
+copied from http://bioconductor.org/books/release/OSCA/cell-type-annotation.html#assigning-cell-labels-from-gene-sets
+```{r}
+#--- loading ---#
+library(scRNAseq)
+sce.zeisel <- ZeiselBrainData()
+
+library(scater)
+sce.zeisel <- aggregateAcrossFeatures(sce.zeisel, 
+    id=sub("_loc[0-9]+$", "", rownames(sce.zeisel)))
+
+#--- gene-annotation ---#
+library(org.Mm.eg.db)
+rowData(sce.zeisel)$Ensembl <- mapIds(org.Mm.eg.db, 
+    keys=rownames(sce.zeisel), keytype="SYMBOL", column="ENSEMBL")
+
+#--- quality-control ---#
+stats <- perCellQCMetrics(sce.zeisel, subsets=list(
+    Mt=rowData(sce.zeisel)$featureType=="mito"))
+qc <- quickPerCellQC(stats, percent_subsets=c("altexps_ERCC_percent", 
+    "subsets_Mt_percent"))
+sce.zeisel <- sce.zeisel[,!qc$discard]
+
+#--- normalization ---#
+library(scran)
+set.seed(1000)
+clusters <- quickCluster(sce.zeisel)
+sce.zeisel <- computeSumFactors(sce.zeisel, cluster=clusters) 
+sce.zeisel <- logNormCounts(sce.zeisel)
+
+
+library(scran)
+wilcox.z <- pairwiseWilcox(sce.zeisel, sce.zeisel$level1class, 
+    lfc=1, direction="up")
+markers.z <- getTopMarkers(wilcox.z$statistics, wilcox.z$pairs,
+    pairwise=FALSE, n=50)
+lengths(markers.z)
 ```
 
