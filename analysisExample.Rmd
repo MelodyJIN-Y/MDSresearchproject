@@ -1,0 +1,75 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+Codes from:
+https://bphipson.github.io/Human_Development_snRNAseq/02-ClusterFetal.html#perform_clustering
+extract data for one sample first 
+```{r}
+library(Seurat)
+library(dplyr)
+library(SingleCellExperiment)
+library(scater)
+pbmc.data<- readRDS("pbmc_pooled_sex.Rds")
+cm<- pbmc.data@assays$RNA@counts
+table(pbmc.data$individual)
+
+
+cm<- pbmc.data[, pbmc.data$individual == "689_690"]@assays$RNA@counts
+dim(cm) # 32738  1789
+
+par(mfrow=c(1,2))
+libsize <- colSums(cm)
+pz <- colMeans(cm==0)
+numgene <- colSums(cm!=0)
+
+par(mfrow=c(1,3))
+plot(density(libsize),main="Distribution of library sizes")
+#abline(v=3000,col=2)
+plot(density(pz), main="Distribution of proportion of zeroes per cell")
+#abline(v=0.95,col=2)
+plot(density(numgene), main="Distribution of detected genes per cell")
+abline(v=500,col=4, lty=3)
+legend("topright",lty=2,col=4,legend="500 genes")
+
+
+pbmc <- CreateSeuratObject(counts = cm, min.cells = 3, min.features = 200)
+pbmc
+
+```
+```{r}
+
+pbmc <- SCTransform(pbmc, verbose = FALSE)
+
+```
+
+
+```{r}
+pbmc <- ScaleData(pbmc, verbose = FALSE)
+pbmc <- RunPCA(pbmc, npcs = 50, verbose = FALSE)
+ElbowPlot(pbmc,ndims=50)
+```
+
+```{r}
+VizDimLoadings(pbmc, dims = 1:4, reduction = "pca")
+```
+
+```{r}
+DimPlot(pbmc, reduction = "pca")
+```
+
+```{r}
+pbmc <- FindNeighbors(pbmc, dims = 1:30)
+pbmc <- FindClusters(pbmc, resolution = 0.3)
+table(Idents(pbmc))
+```
+```{r}
+set.seed(10)
+pbmc <- RunTSNE(pbmc, reduction = "pca", dims = 1:30)
+DimPlot(pbmc, reduction = "tsne",label=TRUE,label.size = 6)+NoLegend()
+```
+
+```{r}
+table(pbmc.data[,colnames(pbmc)]$cell_type)
+```
+
