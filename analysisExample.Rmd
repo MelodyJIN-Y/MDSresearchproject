@@ -2,8 +2,13 @@
 title: "R Notebook"
 output: html_notebook
 ---
+Rescources :
+Marker gene analysis : http://bioconductor.org/books/release/OSCA/marker-detection.html
+Gene set testing: http://bioconductor.org/books/release/OSCA/cell-type-annotation.html#assigning-cell-labels-from-gene-sets
+
 Codes from:
-https://bphipson.github.io/Human_Development_snRNAseq/02-ClusterFetal.html#perform_clustering
+https://bphipson.github.io/Human_Development_snRNAseq/02-ClusterFetal.html#perform_clustering 
+http://combine-australia.github.io/RNAseq-R/06-rnaseq-day1.html#Differential_expression_with_limma-voom
 extract data for one sample first 
 ```{r}
 library(Seurat)
@@ -54,22 +59,222 @@ ElbowPlot(pbmc,ndims=50)
 VizDimLoadings(pbmc, dims = 1:4, reduction = "pca")
 ```
 
-```{r}
-DimPlot(pbmc, reduction = "pca")
-```
 
 ```{r}
 pbmc <- FindNeighbors(pbmc, dims = 1:30)
-pbmc <- FindClusters(pbmc, resolution = 0.3)
+pbmc <- FindClusters(pbmc, resolution = c(0.8,0.9, 1, 1.1, 1.2, 1.3, 1.4))
 table(Idents(pbmc))
+table(pbmc$SCT_snn_res.1.4)
+library(clustree)
+clustree(pbmc, prefix = "SCT_snn_res.")
 ```
 ```{r}
-set.seed(10)
+table(pbmc.data$predicted.celltype.l1)
+```
+
+
+
+```{r}
+table(pbmc$SCT_snn_res.0.8, pbmc.data[,colnames(pbmc)]$predicted.celltype.l1)
+```
+
+```{r}
+table(pbmc.data$cell_type, pbmc.data$predicted.celltype.l1)
+```
+
+
+
+
+
+
+```{r}
+
 pbmc <- RunTSNE(pbmc, reduction = "pca", dims = 1:30)
 DimPlot(pbmc, reduction = "tsne",label=TRUE,label.size = 6)+NoLegend()
 ```
 
 ```{r}
-table(pbmc.data[,colnames(pbmc)]$cell_type)
+
+table(pbmc.data[,colnames(pbmc)]$predicted.celltype.l1)
+#pbmc_new <- RenameIdents(object = pbmc, 
+#                               "0" = "CD4+ KLRB1- T cell ",
+#                               "1" = "CD4+ KLRB1+ T cell ",
+#                               "2" = "CD8+ GNLY+ NKG7+ T cell",
+#                               "3" = "CD8+ LTB+ T cell",
+#                               "4" = "XCL1- NK",
+#                               "5" = "CD8+ T cells",
+#                               "6" = "TCL1A+ FCER2+ B cell",
+#                               "7" = "Monocyte CD14+ ",
+#                               "8" = "CD8+ S100B+ T cell ")
+Idents(pbmc)<- pbmc.data[,colnames(pbmc)]$predicted.celltype.l1
+table(Idents(pbmc))
+DimPlot(pbmc, reduction = "tsne",label=TRUE,label.size = 6,repel = TRUE)+NoLegend()
+```
+
+# Marker analysis
+```{r}
+library(limma)
+library(org.Hs.eg.db)
+ann <- AnnotationDbi:::select(org.Hs.eg.db,keys=rownames(pbmc),columns=c("SYMBOL","ENTREZID","GENENAME"),
+                              keytype = "SYMBOL")
+m <- match(rownames(cm),ann$SYMBOL)
+ann <- ann[m,]
+
+numzero.genes <- rowSums(cm==0)
+keep.genes <- numzero.genes < (ncol(cm)-20)
+all.keep <- cm[keep.genes,]
+ann.keep.all <- ann[keep.genes,]
+
+
+logcounts.all <- lognormCounts(all.keep,log=TRUE,prior.count=0.5) 
+# permutate all.bct 
+
+all.bct <- factor(pbmc.data[,colnames(pbmc)]$predicted.celltype.l1)
+design <- model.matrix(~0+all.bct)
+colnames(design)[1:(length(levels(all.bct)))] <- levels(all.bct)
+
+mycont <- matrix(0,ncol=length(levels(all.bct)),nrow=length(levels(all.bct)))
+colnames(mycont)<-levels(all.bct)
+diag(mycont)<-1
+mycont[upper.tri(mycont)]<- -1/(length(levels(all.bct))-1)
+mycont[lower.tri(mycont)]<- -1/(length(levels(all.bct))-1)
+
+# Fill out remaining rows with 0s
+zero.rows <- matrix(0,ncol=length(levels(all.bct)),nrow=(ncol(design)-length(levels(all.bct))))
+test <- rbind(mycont,zero.rows)
+
+fit <- lmFit(logcounts.all,design)
+fit.cont <- contrasts.fit(fit,contrasts=test)
+fit.cont <- eBayes(fit.cont,trend=TRUE,robust=TRUE)
+
+fit.cont$genes <- ann.keep.all
+
+treat.all <- treat(fit.cont,lfc=0.5)
+obs.tstat<- treat.all$t
+perm.size<- 1000
+
+obs.Ustat <- wmwTest(treat.all$t, go.id, valType = "U", simplify = F)
+
+mg.perm.array<- array(0, dim = c(dim(logcounts.all)[1], dim(design)[2], perm.size))
+gs.perm.array<- array(0, dim = c(dim(obs.U)[1], dim(obs.U)[2], perm.size))
+for (i in 1:perm.size) {
+  # permutate the all.bct only 
+  all.bct.shuffled <- sample(all.bct, replace = FALSE, size =length(all.bct))
+  # to do marker analysis using Limma way
+  design <- model.matrix(~0+all.bct.shuffled)
+  colnames(design)[1:(length(levels(all.bct.shuffled)))] <- levels(all.bct.shuffled)
+  mycont <- matrix(0,
+                   ncol=length(levels(all.bct.shuffled)),
+                   nrow=length(levels(all.bct.shuffled)))
+  colnames(mycont)<-levels(all.bct.shuffled)
+  diag(mycont)<-1
+  mycont[upper.tri(mycont)]<- -1/(length(levels(all.bct.shuffled))-1)
+  mycont[lower.tri(mycont)]<- -1/(length(levels(all.bct.shuffled))-1)
+  
+  # Fill out remaining rows with 0s
+  zero.rows <- matrix(0,ncol=length(levels(all.bct.shuffled)),
+                      nrow=(ncol(design)-length(levels(all.bct.shuffled))))
+  test <- rbind(mycont,zero.rows)
+  
+  fit <- lmFit(logcounts.all,design)
+  fit.cont <- contrasts.fit(fit,contrasts=test)
+  fit.cont <- eBayes(fit.cont,trend=TRUE,robust=TRUE)
+  
+  fit.cont$genes <- ann.keep.all
+  
+  treat.all <- treat(fit.cont,lfc=0.5)
+  # store the statistic for current permutation 
+  mg.perm.array[,,i]<- treat.all$t
+  
+  # Gene set testing 
+  perm.U <- wmwTest(treat.all$t, go.id, valType = "U", simplify = F)
+  gs.perm.array[,,i]<- perm.U
+  
+}
+
+mg.pval<-apply(expand.grid(x = 1:dim(logcounts.all)[1], y = 1:dim(design)[2]), 1, 
+                function(r) (sum(mg.perm.array[r[1],r[2], ] > obs.stat[r[1],r[2]])+1)/(perm.size+1) )
+(mg.pval<- matrix(mg.pval, nrow=dim(logcounts.all)[1], ncol = dim(design)[2], 
+                   byrow=FALSE))
+
+
+gs.pval<-apply(expand.grid(x = 1:dim(obs.U)[1], y = 1:dim(obs.U)[2]), 1, 
+                function(r) (sum(gs.perm.array[r[1],r[2], ] > obs.U[r[1],r[2]])+1)/(perm.size+1) )
+(gs.pval<- matrix(gs.pval, nrow=dim(obs.U)[1], ncol = dim(obs.U)[2], byrow=FALSE))
+
+rownames(gs.pval) <-row.names(pbmc)
+colnames(gs.pval) <- colnames(design)
+
+#dt <- decideTests(treat.all)
+#summary(dt)
+```
+
+
+```{r}
+fit.cont
+```
+
+
+```{r}
+par(mfrow=c(3,3))
+par(mar=c(5,5,2,2))
+for(i in 1:ncol(treat.all)){
+  plotMD(treat.all,coef=i,status = dt[,i],hl.cex=0.5)
+  abline(h=0,col=colours()[c(226)])
+  lines(lowess(treat.all$Amean,treat.all$coefficients[,i]),lwd=1.5,col=4)
+}
+```
+
+```{r}
+volcanoplot(fit.cont,coef=2,highlight=100,names=fit.cont$genes)
+```
+
+
+# Gene set testing
+```{r}
+library(edgeR)
+#download.file("http://bioinf.wehi.edu.au/software/MSigDB/human_c2_v5p2.rdata", "human_c2_v5p2.rdata", mode = "wb")
+#load("human_c2_v5p2.rdata")
+#c2.id <- ids2indices(Hs.c2,treat.all$genes$ENTREZID)
+
+go.terms <- readRDS(url("http://bioinf.wehi.edu.au/MSigDB/v7.1/Hs.c5.all.v7.1.entrez.rds"))
+go.terms[1]
+
+go.id <- ids2indices(go.terms,treat.all$genes$ENTREZID)
+go.camera <- cameraPR(treat.all$t[,1],go.id)
+
+head(go.camera)
+go.camera.up <- go.camera[go.camera[,2]=="Up",]
+
+go.camera.up[1:20,]
+
+reactome.id <-c2.id[grep("REACTOME",names(c2.id))]
+cardio.camera <- cameraPR(treat.all$t[,2],reactome.id)
+cardio.camera
+cardio.camera.up <- cardio.camera[cardio.camera[,2]=="Up",]
+colnames(cardio.camera.up)
+head(cardio.camera.up)
+
+```
+
+
+
+
+```{r}
+library(BioQC)
+wilcoxU <- wmwTest(pvals, geneSets, valType = "U", simplify = F)
+```
+
+```{r}
+head(fit.cont$coefficients)
+```
+
+```{r}
+barcodeplot(fit.cont$coeff[,1], index=c2.id[["REACTOME_PEPTIDE_CHAIN_ELONGATION"]], main="LogFC: REACTOME_PEPTIDE_CHAIN_ELONGATION")
+```
+
+```{r}
+barcodeplot(fit.cont$t[,1], index=c2.id[["REACTOME_PEPTIDE_CHAIN_ELONGATION"]], 
+            main="LogFC: REACTOME_PEPTIDE_CHAIN_ELONGATION")
 ```
 
