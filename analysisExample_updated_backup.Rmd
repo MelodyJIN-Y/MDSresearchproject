@@ -1,0 +1,605 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+Rescources :
+Marker gene analysis : http://bioconductor.org/books/release/OSCA/marker-detection.html
+Gene set testing: http://bioconductor.org/books/release/OSCA/cell-type-annotation.html#assigning-cell-labels-from-gene-sets
+
+Codes from:
+https://bphipson.github.io/Human_Development_snRNAseq/02-ClusterFetal.html#perform_clustering 
+http://combine-australia.github.io/RNAseq-R/06-rnaseq-day1.html#Differential_expression_with_limma-voom
+extract data for one sample first 
+```{r}
+library(Seurat)
+library(dplyr)
+library(SingleCellExperiment)
+library(scater)
+pbmc.data<- readRDS("pbmc_pooled_sex.Rds")
+cm<- pbmc.data@assays$RNA@counts
+table(pbmc.data$individual)
+
+#subset_ind<- c("685_686", "689_690","691_692")
+#cm<- pbmc.data[, pbmc.data$individual %in% subset_ind ]@assays$RNA@counts
+cm<- pbmc.data[, pbmc.data$individual == "689_690"]@assays$RNA@counts
+dim(cm) # 32738  3402 (1789+1613) $32738  4907
+
+par(mfrow=c(1,2))
+libsize <- colSums(cm)
+pz <- colMeans(cm==0)
+numgene <- colSums(cm!=0)
+
+par(mfrow=c(1,3))
+plot(density(libsize),main="Distribution of library sizes")
+#abline(v=3000,col=2)
+plot(density(pz), main="Distribution of proportion of zeroes per cell")
+#abline(v=0.95,col=2)
+plot(density(numgene), main="Distribution of detected genes per cell")
+abline(v=500,col=4, lty=3)
+legend("topright",lty=2,col=4,legend="500 genes")
+library(edgeR)
+
+pbmc <- CreateSeuratObject(counts = cm,min.features = 500, min.cells = 5)
+dim(pbmc) #12031  1329
+dim(pbmc@assays$RNA@counts)
+```
+
+```{r}
+pbmc <- SCTransform(pbmc, verbose = FALSE)
+```
+
+
+```{r}
+pbmc <- ScaleData(pbmc, verbose = FALSE)
+pbmc <- RunPCA(pbmc, npcs = 50, verbose = FALSE)
+ElbowPlot(pbmc,ndims=50)
+```
+
+```{r}
+VizDimLoadings(pbmc, dims = 1:4, reduction = "pca")
+```
+
+
+```{r}
+pbmc <- FindNeighbors(pbmc, dims = 1:30)
+#pbmc <- FindClusters(pbmc, resolution = c(0.8))
+pbmc <- FindClusters(pbmc, resolution = c(0.8,0.9, 1, 1.1, 1.2, 1.3, 1.4))
+table(Idents(pbmc))
+table(pbmc$SCT_snn_res.1.4)
+library(clustree)
+par(mfrow=c(1,1))
+z<- clustree(pbmc, prefix = "SCT_snn_res.")
+pdf("cluster_tree.pdf",width=8,height=8)
+z
+dev.off()
+
+```
+
+```{r}
+table(pbmc.data$predicted.celltype.l1)
+```
+
+
+
+```{r}
+table(pbmc$SCT_snn_res.0.8, pbmc.data[,colnames(pbmc)]$predicted.celltype.l1)
+```
+
+```{r}
+table(pbmc.data$cell_type, pbmc.data$predicted.celltype.l1)
+```
+
+
+```{r}
+
+pbmc <- RunTSNE(pbmc, reduction = "pca")
+DimPlot(pbmc, reduction = "tsne",label=TRUE,label.size = 6)+NoLegend()
+```
+
+```{r}
+
+table(pbmc.data[,colnames(pbmc)]$predicted.celltype.l1)
+#pbmc_new <- RenameIdents(object = pbmc, 
+#                               "0" = "CD4+ KLRB1- T cell ",
+#                               "1" = "CD4+ KLRB1+ T cell ",
+#                               "2" = "CD8+ GNLY+ NKG7+ T cell",
+#                               "3" = "CD8+ LTB+ T cell",
+#                               "4" = "XCL1- NK",
+#                               "5" = "CD8+ T cells",
+#                               "6" = "TCL1A+ FCER2+ B cell",
+#                               "7" = "Monocyte CD14+ ",
+#                               "8" = "CD8+ S100B+ T cell ")
+Idents(pbmc)<- pbmc.data[,colnames(pbmc)]$predicted.celltype.l1
+#Idents(pbmc)<- pbmc.data$predicted.celltype.l1
+table(Idents(pbmc))
+DimPlot(pbmc, reduction = "tsne",label=TRUE,label.size = 6,repel = TRUE)+NoLegend()
+```
+
+# Marker analysis
+```{r}
+library(limma)
+#install.packages('org.Hs.eg.db_3.12.0.tar.gz', 
+#                 lib = "/Users/MelodyJin/Desktop/MAST90108/MDSresearchproject", 
+#                 repo = NULL) 
+#library(org.Hs.eg.db, lib.loc = "/Users/MelodyJin/Desktop/MAST90108/MDSresearchproject")
+#ann <- AnnotationDbi:::select(org.Hs.eg.db,keys=rownames(pbmc),
+#                              columns=c("SYMBOL","ENTREZID","GENENAME"),
+#                              keytype = "SYMBOL")
+#m <- match(rownames(cm),ann$SYMBOL)
+#ann <- ann[m,]
+cm<-pbmc@assays$RNA@counts
+ann.all<- readRDS("allpbmc.Rds")
+numzero.genes <- rowSums(cm==0)
+keep.genes <- numzero.genes < (ncol(cm)-10)
+all.keep <- cm[keep.genes,]
+ann.keep.all <- ann.all[keep.genes,]
+
+table(pbmc.data[, colnames(all.keep)]$predicted.celltype.l1)
+logcounts.all <- lognormCounts(all.keep,log=TRUE,prior.count=0.5) 
+# permutate all.bct 
+
+all.bct <- factor(pbmc.data[,colnames(pbmc)]$predicted.celltype.l1)
+design <- model.matrix(~0+all.bct)
+colnames(design)[1:(length(levels(all.bct)))] <- levels(all.bct)
+
+mycont <- matrix(0,ncol=length(levels(all.bct)),nrow=length(levels(all.bct)))
+colnames(mycont)<-levels(all.bct)
+diag(mycont)<-1
+mycont[upper.tri(mycont)]<- -1/(length(levels(all.bct))-1)
+mycont[lower.tri(mycont)]<- -1/(length(levels(all.bct))-1)
+
+
+# Fill out remaining rows with 0s
+zero.rows <- matrix(0,ncol=length(levels(all.bct)),nrow=(ncol(design)-length(levels(all.bct))))
+test <- rbind(mycont,zero.rows)
+
+fit.obs <- lmFit(logcounts.all,design)
+fit.contrast <- contrasts.fit(fit.obs,contrasts=test)
+
+fit.cont.obs <- eBayes(fit.contrast,trend=TRUE,robust=TRUE)
+
+fit.cont.obs$genes <- ann.keep.all
+summa.fit <- decideTests(fit.cont.obs)
+summary(summa.fit)
+
+obs.modtstat<- fit.cont.obs$t
+
+
+names(fit.contrast)
+
+ordinary.t<- fit.contrast$coef/ fit.contrast$stdev.unscaled / fit.contrast$sigma
+obs.tstat<- ordinary.t
+obs.pval<-pt(ordinary.t, df=fit.contrast$df.residual, lower.tail=FALSE)
+
+obs.mod.pval<- pt(obs.modtstat, df=fit.cont.obs$df.total, lower.tail=FALSE)
+# treat.all$p.value
+perm.size<- 1000
+
+modt.perm.array<- array(0, dim = c(dim(logcounts.all)[1], dim(design)[2], perm.size))
+t.perm.array<- array(0, dim = c(dim(logcounts.all)[1], dim(design)[2], perm.size))
+tic.clearlog()
+tic("1000 perm total")
+for (i in 1:perm.size) {
+  print(i)
+  # permutate the all.bct only 
+  all.bct.shuffled <- sample(all.bct, replace = FALSE, size =length(all.bct))
+  # to do marker analysis using Limma way
+  design <- model.matrix(~0+all.bct.shuffled)
+  colnames(design)[1:(length(levels(all.bct.shuffled)))] <- levels(all.bct.shuffled)
+  mycont <- matrix(0,
+                   ncol=length(levels(all.bct.shuffled)),
+                   nrow=length(levels(all.bct.shuffled)))
+  
+  colnames(mycont)<-levels(all.bct.shuffled)
+  diag(mycont)<-1
+  mycont[upper.tri(mycont)]<- -1/(length(levels(all.bct.shuffled))-1)
+  mycont[lower.tri(mycont)]<- -1/(length(levels(all.bct.shuffled))-1)
+  
+  # Fill out remaining rows with 0s
+  zero.rows <- matrix(0,ncol=length(levels(all.bct.shuffled)),
+                      nrow=(ncol(design)-length(levels(all.bct.shuffled))))
+  
+  test <- rbind(mycont, zero.rows)
+  tic("lmFit")
+  fit <- lmFit(logcounts.all,design)
+  toc(log=TRUE)
+  tic("contrasts.fit")
+  fit.cont <- contrasts.fit(fit, contrasts=test)
+  toc(log=TRUE)
+  t.perm.array[,,i]<-fit.cont$coef/ fit.cont$stdev.unscaled / fit.cont$sigma
+  tic("eBayes")
+  fit.cont.eb <- eBayes(fit.cont,trend=TRUE,robust=TRUE)
+  toc(log=TRUE)
+  fit.cont$genes <- ann.keep.all
+  # store the statistic for current permutation 
+  modt.perm.array[,,i]<- fit.cont.eb$t
+  
+}
+toc(log=TRUE)
+#saveRDS(modt.perm.array, "modt_perm_array_ind1.Rds")
+#saveRDS(t.perm.array, "t_perm_array_ind1.Rds")
+
+perm.pval<-apply(expand.grid(x = 1:dim(logcounts.all)[1], 
+                           y = 1:dim(design)[2]), 1, 
+                function(r) (sum(abs(modt.perm.array[r[1],r[2], ]) > abs(obs.tstat[r[1],r[2]]))+1)/(perm.size+1) )
+
+(perm.pval<- matrix(perm.pval, 
+                  nrow=dim(logcounts.all)[1], 
+                  ncol = dim(design)[2], 
+                   byrow=FALSE))
+rownames(perm.pval) <- row.names(fit.cont$p.value)
+colnames(perm.pval) <- colnames(fit.cont$p.value)
+
+perm.pval.right<-apply(expand.grid(x = 1:dim(logcounts.all)[1], 
+                           y = 1:dim(design)[2]), 1, 
+                function(r) (sum(modt.perm.array[r[1],r[2], ]> obs.tstat[r[1],r[2]])+1)/(perm.size+1) )
+
+(perm.pval.right<- matrix(perm.pval.right, 
+                  nrow=dim(logcounts.all)[1], 
+                  ncol = dim(design)[2], 
+                   byrow=FALSE))
+
+perm.pval.right.adj<- cbind(p.adjust(perm.pval.right[,1], method="BH"),
+                     p.adjust(perm.pval.right[,2], method="BH"),
+                     p.adjust(perm.pval.right[,3], method="BH"),
+                     p.adjust(perm.pval.right[,4], method="BH"),
+                     p.adjust(perm.pval.right[,5], method="BH"),
+                     p.adjust(perm.pval.right[,6], method="BH"),
+                     p.adjust(perm.pval.right[,7], method="BH"),
+                     p.adjust(perm.pval.right[,8], method="BH"))
+
+rownames(perm.pval.right.adj) <- row.names(fit.cont$p.value)
+colnames(perm.pval.right.adj) <- colnames(fit.cont$p.value)
+
+rownames(perm.pval.right) <- row.names(fit.cont$p.value)
+colnames(perm.pval.right) <- colnames(fit.cont$p.value)
+
+perm.pval.adj<- cbind(p.adjust(perm.pval[,1], method="BH"),
+                     p.adjust(perm.pval[,2], method="BH"),
+                     p.adjust(perm.pval[,3], method="BH"),
+                     p.adjust(perm.pval[,4], method="BH"),
+                     p.adjust(perm.pval[,5], method="BH"),
+                     p.adjust(perm.pval[,6], method="BH"),
+                     p.adjust(perm.pval[,7], method="BH"),
+                     p.adjust(perm.pval[,8], method="BH"))
+rownames(perm.pval.adj) <- row.names(fit.cont$p.value)
+colnames(perm.pval.adj) <- colnames(fit.cont$p.value)
+
+#get adjusted pvalues from limma 
+res<-topTable(fit.cont.obs, coef = 1, number = nrow(fit.cont.obs), sort.by = "none")
+obs.adj.pval<- res$adj.P.Val
+for (i in 2:8){
+  res <- topTable(fit.cont.obs, coef = i, number = nrow(fit.cont.obs),sort.by = "none")
+  obs.adj.pval <- cbind(obs.adj.pval, res$adj.P.Val)
+}
+
+rownames(obs.adj.pval) <- row.names(fit.cont$p.value)
+colnames(obs.adj.pval) <- colnames(fit.cont$p.value)
+
+# distribution of pvalues 
+hist(obs.adj.pval,main = "Adjusted p-alues by limma", xlab  ="Adjusted p-alues" )
+hist(perm.pval.adj,ylim = c(0, 30000), 
+     main = "Adjusted p-alues by permutation", 
+     xlab  ="Adjusted p-alues" )
+hist(perm.pval,ylim = c(0, 30000), 
+     main = "p-alues by permutation", 
+     xlab  ="p-alues" )
+
+library(ggvenn)
+for (i in 1:8){
+  #df.upreg.genes<- list("limma" = row.names(obs.adj.pval[which(obs.adj.pval[,i]<0.05),]),
+   #                     "permutation" = row.names(perm.pval.right[which(perm.pval.right[,i]<0.05),]))
+  df.upreg.genes<- list("limma" = row.names(summa.fit[summa.fit[,i]!=0, ]),
+                        "permutation" = row.names(perm.pval[which(perm.pval[,i]<0.05),]))
+  print("#uppreg genes by limma")
+  print(length(df.upreg.genes$limma))
+  print("#uppreg genes by permutation")
+  print(length(df.upreg.genes$permutation))
+  print("# overlapped up-reg genes ")
+  print(table(interaction(df.upreg.genes$limma %in% df.upreg.genes$permutation)))
+  #ggvenn(
+  #  df.upreg.genes, c("limma","permutation"),fill_color = c("blue", "pink"))
+  #print("###\n")
+}
+
+for (i in 1:8){
+  plot(perm.pval[, i],obs.adj.pval[, i], 
+       lwd=0.1, pch=".", 
+       xlab =("pvalue by permutation"), 
+       ylab=("adjusted pvalue by limma"), 
+       main=(paste(colnames(perm.pval.adj)[i],"cells")))
+  abline(a = 0,b=1, col="blue", lwd = 1.5)
+  up_reg_genes =  row.names(summa.fit[summa.fit[,i]==1, ])
+  plot(perm.pval[match(up_reg_genes, row.names(perm.pval)), i], 
+       obs.adj.pval[match(up_reg_genes, row.names(perm.pval)), i],
+       pch="*", 
+       xlab =("pvalue by permutation"), 
+       ylab=("adjusted pvalue by limma"), col = "orange", 
+      main=(paste("significant genes for",colnames(perm.pval)[i],"cells")))
+  abline(a = 0,b=1, col="blue", lwd = 1.5)
+}
+
+for (i in 1:8){
+  plot(perm.pval.adj[, i],obs.adj.pval[, i], 
+       lwd=0.1, pch=".", 
+       xlab =("adjusted pvalue by permutation"), 
+       ylab=("adjusted pvalue by limma"), 
+       main=(paste(colnames(perm.pval.adj)[i],"cells")))
+  abline(a = 0,b=1, col="blue", lwd = 1.5)
+  up_reg_genes =  row.names(summa.fit[summa.fit[,i]==1, ])
+  plot(perm.pval[match(up_reg_genes, row.names(perm.pval)), i], 
+       obs.adj.pval[match(up_reg_genes, row.names(perm.pval)), i],
+       pch="*", ylim = c(0,0.05), xlim = c(0,0.05),
+       xlab =("adjusted pvalue by permutation"), 
+       ylab=("adjusted pvalue by limma "), col = "orange", 
+      main=(paste("significant genes for",colnames(perm.pval)[i],"cells")))
+  abline(a = 0,b=1, col="blue", lwd = 1.5)
+}
+
+
+
+summa.fit <- decideTests(fit.cont.obs)
+summary(summa.fit)
+
+for (i in 1:8){
+  print("########")
+  up_reg_genes =  row.names(summa.fit[summa.fit[,i]==1, ])
+  up_reg_genes_perm<- row.names(perm.pval.right.adj[perm.pval.right.adj[,i]<0.05,])
+  # print(paste("# false positive genes",sum(perm.pval[up_genes, i] >= 0.05)))
+  print(paste("# of up-regulated genes for ", colnames(perm.pval.right.adj)[i], "cells"))
+  print(length(intersect(up_reg_genes_perm, up_reg_genes)))
+  print(sum(perm.pval.right.adj[,i]<0.05))
+  #print(sum(perm.pval.adj[,i]<0.05))
+}
+
+sum(perm.pval.right.adj[,8]<0.05)
+
+
+```
+
+using t-statistic instead 
+```{r}
+library(limma)
+library(tictoc)
+cm<-pbmc@assays$RNA@counts
+ann.all<- readRDS("allpbmc.Rds")
+numzero.genes <- rowSums(cm==0)
+keep.genes <- numzero.genes < (ncol(cm)-10)
+all.keep <- cm[keep.genes,]
+ann.keep.all <- ann.all[keep.genes,]
+logcounts.all <- lognormCounts(all.keep,log=TRUE,prior.count=0.5) 
+
+all.bct <- factor(pbmc.data[,colnames(pbmc)]$predicted.celltype.l1)
+design.obs <- model.matrix(~0+all.bct)
+colnames(design.obs)[1:(length(levels(all.bct)))] <- levels(all.bct)
+
+mycont.obs <- matrix(0,ncol=length(levels(all.bct)),nrow=length(levels(all.bct)))
+colnames(mycont.obs)<-levels(all.bct)
+diag(mycont.obs)<-1
+mycont.obs[upper.tri(mycont.obs)]<- -1/(length(levels(all.bct))-1)
+mycont.obs[lower.tri(mycont.obs)]<- -1/(length(levels(all.bct))-1)
+
+
+# Fill out remaining rows with 0s
+zero.rows <- matrix(0,ncol=length(levels(all.bct)),
+                    nrow=(ncol(design.obs)-length(levels(all.bct))))
+test.obs <- rbind(mycont.obs,zero.rows)
+tic("lmFit")
+fit.obs <- lmFit(logcounts.all,design.obs)
+toc()
+tic("contrasts.fit")
+fit.cont.obs <- contrasts.fit(fit.obs,contrasts=test.obs)
+toc()
+#fit.cont.obs$genes <- ann.keep.all
+
+fit.cont.ebays.obs <- eBayes(fit.cont.obs,trend=TRUE,robust=TRUE)
+
+fit.cont.ebays.obs$genes <- ann.keep.all
+obs.modtstat<- fit.cont.ebays.obs$t
+
+ordinary.t<- fit.cont.obs$coef/ fit.cont.obs$stdev.unscaled / fit.cont.obs$sigma
+obs.tstat<- ordinary.t
+obs.pval<-pt(ordinary.t, df=fit.cont.obs$df.residual, lower.tail=FALSE)
+obs.pval.adj<- cbind(p.adjust(obs.pval[,1], method="BH"),
+                     p.adjust(obs.pval[,2], method="BH"),
+                     p.adjust(obs.pval[,3], method="BH"),
+                     p.adjust(obs.pval[,4], method="BH"),
+                     p.adjust(obs.pval[,5], method="BH"),
+                     p.adjust(obs.pval[,6], method="BH"),
+                     p.adjust(obs.pval[,7], method="BH"),
+                     p.adjust(obs.pval[,8], method="BH"))
+for (i in 1:8){
+  plot(obs.tstat[,i],obs.modtstat[,i] )
+}
+
+perm.size<- 1000
+mg.perm.array<- array(0, 
+                      dim = c(dim(logcounts.all)[1], dim(design.obs)[2], perm.size))
+tic("1000-permutation t-stat total")
+for (i in 1:perm.size) {
+  print(i)
+  # permutate the all.bct only 
+  all.bct.shuffled <- sample(all.bct, replace = FALSE, size =length(all.bct))
+  # to do marker analysis using Limma way
+  design <- model.matrix(~0+all.bct.shuffled)
+  colnames(design)[1:(length(levels(all.bct.shuffled)))] <- levels(all.bct.shuffled)
+  mycont <- matrix(0,
+                   ncol=length(levels(all.bct.shuffled)),
+                   nrow=length(levels(all.bct.shuffled)))
+  colnames(mycont)<-levels(all.bct.shuffled)
+  diag(mycont)<-1
+  mycont[upper.tri(mycont)]<- -1/(length(levels(all.bct.shuffled))-1)
+  mycont[lower.tri(mycont)]<- -1/(length(levels(all.bct.shuffled))-1)
+  
+  # Fill out remaining rows with 0s
+  zero.rows <- matrix(0,ncol=length(levels(all.bct.shuffled)),
+                      nrow=(ncol(design)-length(levels(all.bct.shuffled))))
+  test <- rbind(mycont, zero.rows)
+  tic("lmFit")
+  fit <- lmFit(logcounts.all,design)
+  toc()
+  tic("contrasts.fit")
+  fit.cont <- contrasts.fit(fit, contrasts=test)
+  toc()
+  fit.cont$genes <- ann.keep.all
+  mg.perm.array[,,i]<- fit.cont$coef/ fit.cont$stdev.unscaled / fit.cont$sigma
+}
+toc()
+#mg.perm.array<- readRDS("mg_perm_array_t3_tsta.Rds")
+
+#saveRDS(mg.perm.array, "mg_perm_array_ind1_tstat_fitcont.Rds")
+# writeLines(unlist(log.txt), "log_file_1000_ind1.txt")
+perm.pvals<-apply(expand.grid(x = 1:dim(logcounts.all)[1], 
+                           y = 1:dim(design.obs)[2]), 1, 
+                function(r) (sum(mg.perm.array[r[1],r[2], ]>obs.tstat[r[1],r[2]])+1)/(perm.size+1))
+
+(perm.pval<- matrix(perm.pvals, nrow=dim(logcounts.all)[1], 
+                  ncol = dim(design.obs)[2], 
+                   byrow=FALSE))
+row.names(perm.pval) <- row.names(fit.cont.obs)
+colnames(perm.pval) <- colnames(fit.cont.obs)
+
+perm.pval.adj<- cbind(p.adjust(perm.pval[,1], method="BH"),
+                     p.adjust(perm.pval[,2], method="BH"),
+                     p.adjust(perm.pval[,3], method="BH"),
+                     p.adjust(perm.pval[,4], method="BH"),
+                     p.adjust(perm.pval[,5], method="BH"),
+                     p.adjust(perm.pval[,6], method="BH"),
+                     p.adjust(perm.pval[,7], method="BH"),
+                     p.adjust(perm.pval[,8], method="BH"))
+
+row.names(perm.pval.adj) <- row.names(fit.cont.obs)
+colnames(perm.pval.adj) <- colnames(fit.cont.obs)
+
+# distribution of pvalues 
+for (i in 1:8){
+  hist(obs.pval[,i],ylim = c(0, 500), 
+     main = "p-alues by limma", 
+     xlab  ="p-alues" )
+}
+pdf("hist_ind1.pdf")
+hist(obs.pval,
+     main = "p-alues by limma", 
+     xlab  =" p-alues" )
+hist(obs.pval.adj,
+     main = "Adjusted p-alues by limma", 
+     xlab  ="Adjusted p-alues" )
+hist(perm.pval.adj,ylim = c(0, 30000), 
+     main = "Adjusted p-alues by permutation", 
+     xlab  ="Adjusted p-alues" )
+hist(perm.pval,ylim = c(0, 30000), 
+     main = "p-alues by permutation", 
+     xlab  ="p-alues" )
+dev.off()
+for (i in 1:8){
+  pdf(paste("tstat_ind1_adjp",i,"pdf", sep="."))
+  plot(obs.pval.adj[, i],perm.pval.adj[, i], 
+       lwd=0.1, pch=".", 
+       xlab =("adjusted pvalue by permutation"), 
+       ylab="adjusted pvalue by limma", main=(paste(colnames(perm.pval)[i],"cells")))
+  abline(a = 0,b=1, col="blue", lwd = 1.5)
+  dev.off()
+}
+
+
+for (i in 1:8){
+  pdf(paste("tstat_ind1",i,"pdf", sep="."))
+  #x =  row.names(summa.fit[summa.fit[,i]==1, ])
+  plot(obs.pval[, i],perm.pval[, i], 
+       lwd=0.1, pch=".", 
+       xlab =("pvalue by permutation"), 
+       ylab="pvalue by limma", main=(paste(colnames(perm.pval)[i],"cells")))
+  abline(a = 0,b=1, col="blue", lwd = 1.5)
+  dev.off() 
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+library(scuttle)
+library(scran)
+
+# Directional and with a minimum log-fold change:
+obs.wstat <- pairwiseWilcox(logcounts.all,
+                      groups=factor(pbmc.data[,colnames(pbmc)]$predicted.celltype.l1),
+                      #gene.names = row.names(cm[keep.genes,]), 
+                      restrict = factor(c(0,1,1,1,1,1,1,1)))
+obs.wstat$pairs
+```
+
+
+```{r}
+par(mfrow=c(3,3))
+par(mar=c(5,5,2,2))
+for(i in 1:ncol(treat.all)){
+  plotMD(treat.all,coef=i,status = dt[,i],hl.cex=0.5)
+  abline(h=0,col=colours()[c(226)])
+  lines(lowess(treat.all$Amean,treat.all$coefficients[,i]),lwd=1.5,col=4)
+}
+```
+
+
+
+
+```{r}
+volcanoplot(fit.cont,coef=2,highlight=100,names=fit.cont$genes)
+```
+
+
+# Gene set testing
+```{r}
+library(edgeR)
+#download.file("http://bioinf.wehi.edu.au/software/MSigDB/human_c2_v5p2.rdata", "human_c2_v5p2.rdata", mode = "wb")
+#load("human_c2_v5p2.rdata")
+#c2.id <- ids2indices(Hs.c2,treat.all$genes$ENTREZID)
+
+go.terms <- readRDS(url("http://bioinf.wehi.edu.au/MSigDB/v7.1/Hs.c5.all.v7.1.entrez.rds"))
+go.terms[1]
+
+go.id <- ids2indices(go.terms,treat.all$genes$ENTREZID)
+go.camera <- cameraPR(treat.all$t[,1],go.id)
+
+head(go.camera)
+go.camera.up <- go.camera[go.camera[,2]=="Up",]
+
+go.camera.up[1:20,]
+
+reactome.id <-c2.id[grep("REACTOME",names(c2.id))]
+cardio.camera <- cameraPR(treat.all$t[,2],reactome.id)
+cardio.camera
+cardio.camera.up <- cardio.camera[cardio.camera[,2]=="Up",]
+colnames(cardio.camera.up)
+head(cardio.camera.up)
+
+```
+
+
+
+
+```{r}
+library(BioQC)
+wilcoxU <- wmwTest(pvals, geneSets, valType = "U", simplify = F)
+```
+
+```{r}
+head(fit.cont$coefficients)
+```
+
+```{r}
+barcodeplot(fit.cont$coeff[,1], index=c2.id[["REACTOME_PEPTIDE_CHAIN_ELONGATION"]], main="LogFC: REACTOME_PEPTIDE_CHAIN_ELONGATION")
+```
+
+```{r}
+barcodeplot(fit.cont$t[,1], index=c2.id[["REACTOME_PEPTIDE_CHAIN_ELONGATION"]], 
+            main="LogFC: REACTOME_PEPTIDE_CHAIN_ELONGATION")
+```
+
