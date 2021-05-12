@@ -1,0 +1,111 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+
+library(Seurat)
+library(dplyr)
+library(SingleCellExperiment)
+library(scater)
+pbmc.data<- readRDS("pbmc_pooled_sex.Rds")
+cm<- pbmc.data@assays$RNA@counts
+table(pbmc.data$individual)
+
+#subset_ind<- c("685_686", "689_690","691_692")
+#cm<- pbmc.data[, pbmc.data$individual %in% subset_ind ]@assays$RNA@counts
+cm<- pbmc.data[, pbmc.data$individual == "689_690"]@assays$RNA@counts
+dim(cm) # 32738  3402 (1789+1613) $32738  4907
+
+pbmc <- CreateSeuratObject(counts = cm,min.features = 500, min.cells = 5)
+dim(pbmc) #12031  1329
+dim(pbmc@assays$RNA@counts)
+library(speckle)
+prop <- getTransformedProps(pbmc.data$predicted.celltype.l1, pbmc.data$individual)
+prop$Counts
+prop$Proportions
+```
+
+```{r}
+
+library(splatter)
+
+
+cm<-pbmc@assays$RNA@counts
+ann.all<- readRDS("allpbmc.Rds")
+numzero.genes <- rowSums(cm==0)
+keep.genes <- numzero.genes < (ncol(cm)-10)
+all.keep <- cm[keep.genes,]
+ann.keep.all <- ann.all[keep.genes,]
+cm.processed<- all.keep
+
+
+
+# with six individuals 
+removed_cells <- colnames(cm.processed[,pbmc.data[,colnames(cm.processed)]$predicted.celltype.l1 %in% c("DC", "other")])
+cm.processed.r<- cm.processed[, -match(removed_cells, colnames(cm.processed))]
+metadata <- data.frame(cell_type = pbmc.data[row.names(cm.processed.r),colnames(cm.processed.r)]$predicted.celltype.l1,
+                       ind = '689_690')
+ct_prop <- as.numeric(table(pbmc.data[,colnames(cm.processed.r)]$predicted.celltype.l1)/ncol(cm.processed.r))
+# B       CD4 T       CD8 T        Mono          NK     other T 
+# 0.051178838 0.619321449 0.128234618 0.056929270 0.136860265 0.007475561 
+
+sce <- SingleCellExperiment(assays = as.matrix(cm.processed.r),
+                            colData=metadata)
+table(sce$cell_type)
+params <- newSplatParams()
+params <- setParam(params, "group.prob", ct_prop)
+params <- splatEstimate(sce,params = params)
+# SplatParams
+sim <- splatSimulate(params, method = "groups", nGenes = 5000,
+                     batchCells = 1000, dropout.type = "none", out.prob = 0, 
+                     de.prob = c(0.02, 0.02, 0, 0, 0, 0), 
+                     group.prob = c(800/1000, 200/1000, 0,0,0,0),
+                     seed = 12202)
+table(sim$Group)
+
+
+true.sup.g1<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup1 != 1, "Gene"]
+true.sup.g2<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup2 != 1, "Gene"]
+
+sim_cm<- counts(sim)
+levels(sim$Group)<- c("B", "CD4T", "CD8T","Mono","NK","otherT" )
+
+# limma for observation
+obs_res<- computeObs(sim_cm, factor(sim$Group))
+
+# run permutation
+sim_perm_arrays <- tPerm(sim_cm, sim$Group)
+
+# permutation stats
+# modt.perm.array<- sim_perm_arrays$modet.perm
+t.perm.array<- sim_perm_arrays$t.perm
+
+
+
+# t-stat
+t.perm.pvals<-apply(expand.grid(x = 1:dim(sim_cm)[1], 
+                           y = 1:dim(t.perm.array)[2]), 1, 
+                function(r) (sum(t.perm.array[r[1],r[2], ]> obs.tstat[r[1],r[2]])+1)/(perm.size+1) )
+
+(t.perm.pval<- matrix(t.perm.pvals, 
+                  nrow=dim(sim_cm)[1], 
+                  ncol = dim(t.perm.array)[2], 
+                   byrow=FALSE))
+rownames(t.perm.pval) <- row.names(sim_cm)
+colnames(t.perm.pval) <- colnames(sim_perm_arrays$ct.names)
+
+t.perm.pval.adj<- cbind(p.adjust(t.perm.pval[,1], method="BH"),
+                     p.adjust(t.perm.pval[,2], method="BH"))
+
+rownames(t.perm.pval.adj) <- row.names(sim_cm)
+colnames(t.perm.pval.adj) <- colnames(sim_perm_arrays$ct.names)
+
+z<-computeSummary(obs.t.pval, t.perm.pval, list(true.sup.g1, true.sup.g2), c(903, 97))
+z<-computeSummary(obs.t.pval.adj, t.perm.pval.adj, list(true.sup.g1, true.sup.g2), c(903, 97))
+
+
+
+```
+
