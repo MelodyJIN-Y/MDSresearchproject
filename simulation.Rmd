@@ -30,7 +30,7 @@ prop$Proportions
 ```{r}
 
 library(splatter)
-
+library(reshape2)
 
 cm<-pbmc@assays$RNA@counts
 ann.all<- readRDS("allpbmc.Rds")
@@ -53,59 +53,717 @@ ct_prop <- as.numeric(table(pbmc.data[,colnames(cm.processed.r)]$predicted.cellt
 
 sce <- SingleCellExperiment(assays = as.matrix(cm.processed.r),
                             colData=metadata)
+#meta<- as.data.frame(sce$cell_type)
+#row.names(meta)<- colnames(sce)
+#colnames(meta)<- "cell.type"
+
+logcounts.all.obs <- lognormCounts(cm.processed.r,log=TRUE,prior.count=0.5) 
+
+all.bct <- factor(sce$cell_type)
+design <- model.matrix(~0+all.bct)
+colnames(design)[1:(length(levels(all.bct)))] <- levels(all.bct)
+
+mycont <- matrix(0,ncol=length(levels(all.bct)),nrow=length(levels(all.bct)))
+colnames(mycont)<-levels(all.bct)
+diag(mycont)<-1
+mycont[upper.tri(mycont)]<- -1/(length(levels(all.bct))-1)
+mycont[lower.tri(mycont)]<- -1/(length(levels(all.bct))-1)
+
+# Fill out remaining rows with 0s
+zero.rows <- matrix(0,ncol=length(levels(all.bct)),
+                    nrow=(ncol(design)-length(levels(all.bct))))
+test <- rbind(mycont,zero.rows)
+
+fit.obs <- lmFit(logcounts.all.obs,design)
+fit.contrast <- contrasts.fit(fit.obs,contrasts=test)
+
+fit.cont.eb.obs <- eBayes(fit.contrast,trend=TRUE,robust=TRUE)
+
+#l <- topTable(fit.cont.eb.obs,sort="none",number = nrow(fit.cont.eb.obs))
+#colnames(l)
+
+
+
+
+library(scater)
+
 table(sce$cell_type)
 params <- newSplatParams()
 params <- setParam(params, "group.prob", ct_prop)
 params <- splatEstimate(sce,params = params)
 # SplatParams
 sim <- splatSimulate(params, method = "groups", nGenes = 5000,
-                     batchCells = 1000, dropout.type = "none", out.prob = 0, 
-                     de.prob = c(0.02, 0.02, 0, 0, 0, 0), 
-                     group.prob = c(800/1000, 200/1000, 0,0,0,0),
-                     seed = 12202)
-table(sim$Group)
+                     batchCells = 1000, #dropout.type = "none", out.prob = 0, 
+                     de.prob = c(0.02, 0.02, 0.02, 0.02, 0.02, 0.02), 
+                     group.prob = c(1/6, 1/6, 1/6, 1/6, 1/6, 1/6),
+                     seed = 12202, 
+                     de.facLoc = c(10,10, 10, 10, 10, 10),
+                     #de.facScale = c(0.001, 0.001, 0.001, 0.001, 0.001, 0.001),
+                     verbose = FALSE)
 
+levels(sim$Group) <- gsub("simulation1", "B", levels(sim$Group))
+
+levels(sim$Group)  <- gsub("simulation2", "CD4 T", levels(sim$Group))
+levels(sim$Group)  <- gsub("simulation3", "CD8 T", levels(sim$Group))
+levels(sim$Group)  <- gsub("simulation4", "Mono",levels(sim$Group))
+levels(sim$Group)  <- gsub("simulation5", "NK", levels(sim$Group))
+levels(sim$Group)  <- gsub("simulation6", "other T", levels(sim$Group))
+
+sim <- logNormCounts(sim)
+sim <- runPCA(sim)
+plotPCA(sim, colour_by = "Group")
+
+
+
+table(sim$Group)
+meta<- as.data.frame(sim$Group)
+row.names(meta)<- colnames(sim)
+colnames(meta)<- "cell.type"
+sim_cm<- CreateSeuratObject(counts = counts(sim), meta.data =meta)
+sim_cm <- SCTransform(sim_cm, verbose = FALSE)
+sim_cm <- ScaleData(sim_cm, verbose = FALSE)
+sim_cm <- RunPCA(sim_cm,npc=2,verbose = FALSE)
+ElbowPlot(sim_cm,ndims=2)
+
+#sim_cm <- FindNeighbors(sim_cm, dims = 1:2)
+#pbmc <- FindClusters(pbmc, resolution = c(0.8))
+#sim_cm <- FindClusters(sim_cm, resolution = c(0.8,0.9, 1, 1.1, 1.2, 1.3, 1.4))
+
+table(Idents(sim_cm))
+Idents(sim_cm)<- sim_cm$cell.type
+sim_cm <- RunTSNE(sim_cm, reduction = "pca")
+DimPlot(sim_cm, reduction = "tsne",label=TRUE,label.size = 6)+NoLegend()
+
+
+
+logcounts.all <- lognormCounts(counts(sim),log=TRUE,prior.count=0.5) 
+
+all.bct <- factor(sim$Group)
+design <- model.matrix(~0+all.bct)
+colnames(design)[1:(length(levels(all.bct)))] <- levels(all.bct)
+
+mycont <- matrix(0,ncol=length(levels(all.bct)),nrow=length(levels(all.bct)))
+colnames(mycont)<-levels(all.bct)
+diag(mycont)<-1
+mycont[upper.tri(mycont)]<- -1/(length(levels(all.bct))-1)
+mycont[lower.tri(mycont)]<- -1/(length(levels(all.bct))-1)
+
+# Fill out remaining rows with 0s
+zero.rows <- matrix(0,ncol=length(levels(all.bct)),
+                    nrow=(ncol(design)-length(levels(all.bct))))
+test <- rbind(mycont,zero.rows)
+
+fit.obs <- lmFit(logcounts.all,design)
+fit.contrast <- contrasts.fit(fit.obs,contrasts=test)
+
+fit.cont.eb.obs <- eBayes(fit.contrast,trend=TRUE,robust=TRUE)
+
+# !!!!!!!
+true.sup.g1<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup1 > 1, "Gene"]
+true.sup.g2<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup2 > 1, "Gene"]
+### 
+
+
+l <- topTable(fit.cont.eb.obs,sort="none",number = nrow(fit.cont.eb.obs))
+plot(l[match(true.sup.g1, row.names(l)), "Group1"])
+
+plot(l[match(true.sup.g2, row.names(l)), "Group2"])
+
+k1<- l[match(true.sup.g1, row.names(l)), ]
+print(summary(k1[,"Group1"]))
+
+k2<- l[match(true.sup.g2, row.names(l)), ]
+print(summary(k2[which(k2$Group2>0),"Group2"]))
+
+print(var(k1[,"Group1"]))
+print(var(k2[,"Group2"]))
+```
+
+
+```{r}
+library(reshape2)
+groups_lst<- list(c(1/6, 1/6,1/6, 1/6, 1/6, 1/6),
+                  c(0.18, 1/10, 0.18,0.18,0.18,0.18), 
+               c(0.16,2/10,0.16,0.16,0.16,0.16), 
+               c(0.14,3/10, 0.14,0.14,0.14,0.14), 
+               c( 0.12, 4/10,0.12,0.12,0.12,0.12),
+               c(0.1, 5/10, 0.1, 0.1,0.1, 0.1),
+               c(0.08, 6/10, 0.08,0.08,0.08,0.08),
+               c(0.06, 7/10,0.06,0.06,0.06,0.06),
+               c(0.04, 8/10, 0.04,0.04,0.04,0.04),
+               c(0.02, 9/10, 0.02,0.02, 0.02, 0.02))
+for (i in 1:10){
+  print(i)
+  sim <- splatSimulate(params, method = "groups", nGenes = 5000,lib.norm=FALSE,
+                     batchCells = 1000, dropout.type = "none",
+                     de.prob = c(0.02, 0.02, 0.02, 0.02, 0.02, 0.02), 
+                     group.prob = groups_lst[[1]],
+                     seed = 12202, 
+                     de.facLoc = c(10, 10, 10, 10, 10, 10),
+                     #de.facScale = c(0.9, 0.9, 0.9, 0.9, 0.9, 0.9),
+                    de.facScale = c(0.01, 0.01, 0.01, 0.01, 0.01, 0.01),
+                            verbose = FALSE)
+  levels(sim$Group)<- c("B", "CD4T", "CD8T","Mono","NK","otherT" )
+  obs_res<- computeObs(counts(sim), factor(sim$Group))
+  obs.tstat<- obs_res$obs.tstat
+  obs.t.pval<- obs_res$obs.t.pval
+  
+  # run permutation
+  sim_perm_arrays <- tPerm(counts(sim), sim$Group)
+  
+  # permutation stats
+  t.perm.array<- sim_perm_arrays$t.perm
+  
+  # t-stat
+  t.perm.pvals<-apply(expand.grid(x = 1:dim(counts(sim))[1], 
+                                  y = 1:dim(t.perm.array)[2]), 1, 
+                      function(r) (sum(t.perm.array[r[1],r[2], ]> obs.tstat[r[1],r[2]])+1)/(perm.size+1) )
+  
+  t.perm.pval<- matrix(t.perm.pvals, 
+                       nrow=dim(counts(sim))[1], 
+                       ncol = dim(t.perm.array)[2], 
+                       byrow=FALSE)
+  rownames(t.perm.pval) <- row.names(counts(sim))
+  colnames(t.perm.pval) <- colnames(sim_perm_arrays$ct.names)
+  
+  t.perm.pval.adj<- cbind(p.adjust(t.perm.pval[,1], method="BH"),
+                          p.adjust(t.perm.pval[,2], method="BH"), 
+                          p.adjust(t.perm.pval[,3], method="BH"),
+                          p.adjust(t.perm.pval[,4], method="BH"),
+                          p.adjust(t.perm.pval[,5], method="BH"),
+                          p.adjust(t.perm.pval[,6], method="BH"))
+  
+  rownames(t.perm.pval.adj) <- row.names(counts(sim))
+  colnames(t.perm.pval.adj) <- sim_perm_arrays$ct.names
+  
+  
+  obs.t.pval.adj<- cbind(p.adjust(obs.t.pval[,1], method="BH"),
+                         p.adjust(obs.t.pval[,2], method="BH"),
+                         p.adjust(obs.t.pval[,3], method="BH"),
+                         p.adjust(obs.t.pval[,4], method="BH"),
+                         p.adjust(obs.t.pval[,5], method="BH"),
+                         p.adjust(obs.t.pval[,6], method="BH"))
+  
+  rownames(obs.t.pval.adj) <- row.names(counts(sim))
+  colnames(obs.t.pval.adj) <- sim_perm_arrays$ct.names
+  
+  top.T <- topTable(obs_res$fit.cont.eb.obs,sort="none",number = nrow(obs_res$fit.cont.eb.obs))
+  logFC<- top.T[, 4:9]
+
+  true.sup.g1<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup1 > 1, "Gene"]
+  true.sup.g2<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup2 > 1, "Gene"]
+  true.sup.g3<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup3 > 1, "Gene"]
+  true.sup.g4<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup4 > 1, "Gene"]
+  true.sup.g5<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup5 > 1, "Gene"]
+  true.sup.g6<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup6 > 1, "Gene"]
+  true.upreg = list(true.sup.g1, true.sup.g2,true.sup.g3, true.sup.g4, true.sup.g5, true.sup.g6)
+  
+  
+  intersect(true.sup.g5, true.sup.g3)
+  
+  for (i in 1:6){
+    upreg_genes <- row.names(obs.t.pval[which(obs.t.pval[,i] < 0.05),])
+    nonsig_genes <-row.names(obs.t.pval[which(obs.t.pval[,i] >= 0.05),])
+    tp<- intersect(upreg_genes, true.upreg[[i]])
+    fp<- setdiff(upreg_genes, intersect(true.upreg[[i]], upreg_genes))
+    tn<- intersect(setdiff(row.names(obs.t.pval),true.upreg[[i]]),nonsig_genes)
+    fn<- setdiff(true.upreg[[i]], upreg_genes)
+    logFC[,i+6]<- "TN"
+    logFC[match(tp, row.names(logFC)), i+6]<- "TP"
+    logFC[match(fp, row.names(logFC)), i+6]<- "FP"
+    logFC[match(fn, row.names(logFC)), i+6]<- "FN"
+    colnames(logFC)[i+6]<- paste(colnames(logFC)[i], "sumamry", sep="")
+  }
+  
+  
+  summary(logFC[logFC$Bsumamry %in% c("TP", "FN"), "B"])
+  summary(logFC[logFC$Bsumamry %in% c("FP", "TN"), "B"])
+  
+  sd(logFC[logFC$Bsumamry %in% c("TP", "FN"), "B"]) # 2.566434
+  sd(logFC[logFC$Bsumamry %in% c("FP", "TN"), "B"]) # 0.408154
+  
+  # pvalues<- as.data.frame(matrix(0, ncol = 12, nrow = nrow(obs.t.pval)))
+
+  for (i in 1:6){
+    pv.obs<-as.data.frame(matrix(0, ncol = 2, nrow = nrow(obs.t.pval)))
+    pv.perm<- as.data.frame(matrix(0, ncol = 2, nrow = nrow(obs.t.pval)))
+    pv.obs[, 1]<- obs.t.pval[, i]
+    pv.perm[, 1]<- t.perm.pval[, i]
+    #a[, 3]<- p.adjust(a[,1], method = "BH")
+    pv.obs[, 2]<- 0
+    pv.perm[, 2]<- 0
+    pv.obs[match(true.upreg[[i]],row.names(obs.t.pval)),2]<- 1
+    pv.perm[match(true.upreg[[i]],row.names(obs.t.pval)),2]<- 1
+    pv.obs<- pv.obs[order(pv.obs[,1]), ]
+    pv.perm<- pv.perm[order(pv.perm[,1]), ]
+    plot(cumsum(pv.obs[1:500,2]), type="s",main = colnames(obs.t.pval)[i])
+    lines(cumsum(pv.perm[1:500,2]), type="s",main = colnames(obs.t.pval)[i],col = "blue")
+  }
+  
+  
+  logFC.mel <- melt(logFC,
+                         measure.vars =c("Bsumamry", "CD4Tsumamry", "CD8Tsumamry", "Monosumamry", "NKsumamry" ,"otherTsumamry"),
+                         variable.name = "summary",value.name = "group" )
+  logFC.melt <- melt(logFC.mel,
+                         measure.vars =c("B", "CD4T", "CD8T", "Mono", "NK" ,"otherT"),
+                         variable.name = "type", value.name = "logFC")
+  ggplot(logFC.melt, aes(y = logFC, fill =  logFC, x = group))+
+    geom_violin()+facet_wrap(~type, nrow= 3,  ncol=2)
+  
+}
+```
+
+
+
+```{r}
+perm.size<-1000
+groups_lst<- list(c(1/6, 1/6,1/6, 1/6, 1/6, 1/6),
+                  c(0.18, 1/10, 0.18,0.18,0.18,0.18), 
+               c(0.16,2/10,0.16,0.16,0.16,0.16), 
+               c(0.14,3/10, 0.14,0.14,0.14,0.14), 
+               c( 0.12, 4/10,0.12,0.12,0.12,0.12),
+               c(0.1, 5/10, 0.1, 0.1,0.1, 0.1),
+               c(0.08, 6/10, 0.08,0.08,0.08,0.08),
+               c(0.06, 7/10,0.06,0.06,0.06,0.06),
+               c(0.04, 8/10, 0.04,0.04,0.04,0.04),
+               c(0.02, 9/10, 0.02,0.02, 0.02, 0.02))
+for (i in 2:10){
+  print(i)
+  sim <- splatSimulate(params, method = "groups", nGenes = 5000,
+                     batchCells = 1000, #dropout.type = "none", out.prob = 0, 
+                     de.prob = c(0.02, 0.02, 0.02, 0.02, 0.02, 0.02), 
+                     group.prob = groups_lst[[i]],
+                     seed = 12202, 
+                     de.facLoc = c(10, 10, 10, 10, 10, 10),
+                     de.facScale = c(0.01, 0.01, 0.01, 0.01, 0.01, 0.01),
+                            verbose = FALSE)
+  # table(sim$Group)
+  true.sup.g1<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup1 >1, "Gene"]
+  true.sup.g2<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup2 >1, "Gene"]
+  true.sup.g3<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup3 >1, "Gene"]
+  true.sup.g4<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup4 >1, "Gene"]
+  true.sup.g5<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup5 >1, "Gene"]
+  true.sup.g6<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup6 >1, "Gene"]
+  true.upreg = list(true.sup.g1, true.sup.g2,true.sup.g3, true.sup.g4, true.sup.g5, true.sup.g6)
+  sim_cm<- counts(sim)
+  levels(sim$Group)<- c("B", "CD4T", "CD8T","Mono","NK","otherT" )
+  
+  # limma for observation
+  obs_res<- computeObs(sim_cm, factor(sim$Group))
+  obs.tstat<- obs_res$obs.tstat
+  obs.t.pval<- obs_res$obs.t.pval
+  
+  # run permutation
+  sim_perm_arrays <- tPerm(sim_cm, sim$Group)
+  
+  # permutation stats
+  t.perm.array<- sim_perm_arrays$t.perm
+  
+  # t-stat
+  t.perm.pvals<-apply(expand.grid(x = 1:dim(sim_cm)[1], 
+                                  y = 1:dim(t.perm.array)[2]), 1, 
+                      function(r) (sum(t.perm.array[r[1],r[2], ] > obs.tstat[r[1],r[2]])+1)/(perm.size+1) )
+  
+  t.perm.pval<- matrix(t.perm.pvals, 
+                       nrow=dim(sim_cm)[1], 
+                       ncol = dim(t.perm.array)[2], 
+                       byrow=FALSE)
+  rownames(t.perm.pval) <- row.names(sim_cm)
+  colnames(t.perm.pval) <- colnames(sim_perm_arrays$ct.names)
+  
+  t.perm.pval.adj<- cbind(p.adjust(t.perm.pval[,1], method="BH"),
+                          p.adjust(t.perm.pval[,2], method="BH"), 
+                          p.adjust(t.perm.pval[,3], method="BH"),
+                          p.adjust(t.perm.pval[,4], method="BH"),
+                          p.adjust(t.perm.pval[,5], method="BH"),
+                          p.adjust(t.perm.pval[,6], method="BH"))
+  t.perm.pval.adj<- as.data.frame(t.perm.pval.adj)
+  rownames(t.perm.pval.adj) <- row.names(sim_cm)
+  colnames(t.perm.pval.adj) <- sim_perm_arrays$ct.names
+  
+  
+  obs.t.pval.adj<- cbind(p.adjust(obs.t.pval[,1], method="BH"),
+                         p.adjust(obs.t.pval[,2], method="BH"),
+                         p.adjust(obs.t.pval[,3], method="BH"),
+                         p.adjust(obs.t.pval[,4], method="BH"),
+                         p.adjust(obs.t.pval[,5], method="BH"),
+                         p.adjust(obs.t.pval[,6], method="BH"))
+  obs.t.pval.adj <- as.data.frame(obs.t.pval.adj)
+  rownames(obs.t.pval.adj) <- row.names(sim_cm)
+  colnames(obs.t.pval.adj) <- sim_perm_arrays$ct.names
+  
+  
+  # obs.p, perm.p,adj, true.upreg, cell_num, main.describe, save.path
+  #top.T <- topTable(obs_res$fit.cont.eb.obs,sort="none",number = nrow(obs_res$fit.cont.eb.obs))
+  #logFC<- top.T[, 4:9]
+
+  #for (i in 1:6){
+  #  upreg_genes <- row.names(obs.t.pval.adj[which(obs.t.pval.adj[,i] < 0.05),])
+  #  nonsig_genes <-row.names(obs.t.pval.adj[which(obs.t.pval.adj[,i] >= 0.05),])
+  #  tp<- intersect(upreg_genes, true.upreg[[i]])
+  #  fp<- setdiff(upreg_genes, intersect(true.upreg[[i]], upreg_genes))
+  #  tn<- intersect(setdiff(row.names(obs.t.pval.adj),true.upreg[[i]]),nonsig_genes)
+  #  fn<- setdiff(true.upreg[[i]], upreg_genes)
+  #  logFC[,i+6]<- "TN"
+  #  logFC[match(tp, row.names(logFC)), i+6]<- "TP"
+  #  logFC[match(fp, row.names(logFC)), i+6]<- "FP"
+  #  logFC[match(fn, row.names(logFC)), i+6]<- "FN"
+  #  colnames(logFC)[i+6]<- paste(colnames(logFC)[i], "summary", sep="")
+  #}
+  
+  #logFC.mel <- melt(logFC,
+  #                       measure.vars =c("Bsummary", "CD4Tsummary", "CD8Tsummary", "Monosummary", "NKsummary" ,"otherTsummary"),
+  #                       variable.name = "summary",value.name = "group" )
+  #logFC.melt <- melt(logFC.mel,
+  #                       measure.vars =c("B", "CD4T", "CD8T", "Mono", "NK" ,"otherT"),
+  #                       variable.name = "type", value.name = "logFC")
+  
+  pdf(paste(paste(as.character(table(sim$Group)),collapse="_"), "cumsum.pdf",  sep="."))
+  
+  #ggplot(logFC.melt, aes(y = logFC, fill =  logFC, x = group))+
+  #  geom_violin()+facet_wrap(~type, nrow= 3,  ncol=2)
+  
+  # cumsum plot of p-values 
+  for (i in 1:6){
+    pv.obs<-as.data.frame(matrix(0, ncol = 2, nrow = nrow(obs.t.pval)))
+    pv.perm<- as.data.frame(matrix(0, ncol = 2, nrow = nrow(obs.t.pval)))
+    pv.obs[, 1]<- obs.t.pval[, i]
+    pv.perm[, 1]<- t.perm.pval[, i]
+    pv.obs[, 2]<- 0
+    pv.perm[, 2]<- 0
+    pv.obs[match(true.upreg[[i]],row.names(obs.t.pval)),2]<- 1
+    pv.perm[match(true.upreg[[i]],row.names(obs.t.pval)),2]<- 1
+    pv.obs<- pv.obs[order(pv.obs[,1]), ]
+    pv.perm<- pv.perm[order(pv.perm[,1]), ]
+    plot(cumsum(pv.obs[1:500,2]), type="s",main = colnames(obs.t.pval)[i], ylab = "cumsum p values")
+    lines(cumsum(pv.perm[1:500,2]), type="s",col = "blue")
+    legend(x = "bottomright",          
+       legend = c("limma", "permutation"),
+       col = c("black", "blue"),           
+       lwd = 2)    
+  }
+  
+  # cumsum plot of adjusuted p-values 
+  for (i in 1:6){
+    pv.obs<-as.data.frame(matrix(0, ncol = 2, nrow = nrow(obs.t.pval)))
+    pv.perm<- as.data.frame(matrix(0, ncol = 2, nrow = nrow(obs.t.pval)))
+    pv.obs[, 1]<- obs.t.pval.adj[, i]
+    pv.perm[, 1]<- t.perm.pval.adj[, i]
+    pv.obs[, 2]<- 0
+    pv.perm[, 2]<- 0
+    pv.obs[match(true.upreg[[i]],row.names(obs.t.pval.adj)),2]<- 1
+    pv.perm[match(true.upreg[[i]],row.names(t.perm.pval.adj)),2]<- 1
+    pv.obs<- pv.obs[order(pv.obs[,1]), ]
+    pv.perm<- pv.perm[order(pv.perm[,1]), ]
+    plot(cumsum(pv.obs[1:500,2]), type="s",main = colnames(obs.t.pval)[i], ylab = "cumsum adjusted p values")
+    lines(cumsum(pv.perm[1:500,2]), type="s",col = "blue")
+    legend(x = "bottomright",          
+       legend = c("limma", "permutation"),
+       col = c("black", "blue"),           
+       lwd = 2)    
+  }
+  
+  dev.off()
+
+  
+  
+  z<-computeSummary3(obs.t.pval, t.perm.pval,
+                     adj = "",
+                     true.upreg = list(true.sup.g1, true.sup.g2,true.sup.g3, true.sup.g4, true.sup.g5, true.sup.g6), 
+                     cell_num=as.vector(table(sim$Group)), 
+                     main.describe = paste(as.character(table(sim$Group)),collapse="_"))
+  
+  z.adj<-computeSummary3(obs.t.pval.adj, t.perm.pval.adj,
+                         adj = "adjusted",
+                         true.upreg = list(true.sup.g1, true.sup.g2,true.sup.g3, true.sup.g4, true.sup.g5, true.sup.g6), 
+                         cell_num=as.vector(table(sim$Group)), 
+                         main.describe = paste(as.character(table(sim$Group)),collapse="_"))
+  #df_raw<- z
+  df_raw<- rbind(df_raw, z)
+  #df_raw_adj<-z.adj
+  df_raw_adj<-rbind(df_raw_adj, z.adj)
+}
+df_raw
+
+write.csv(df_raw, file="raw_pvalue_result_100upreg_updated.csv")
+write.csv(df_raw_adj, file="adj_pvalue_result_100upreg_updated.csv")
+
+```
+
+
+
+
+```{r}
 
 true.sup.g1<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup1 != 1, "Gene"]
 true.sup.g2<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup2 != 1, "Gene"]
+true.sup.g3<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup3 != 1, "Gene"]
+true.sup.g4<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup4 != 1, "Gene"]
+true.sup.g5<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup5 != 1, "Gene"]
+true.sup.g6<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup6 != 1, "Gene"]
 
 sim_cm<- counts(sim)
 levels(sim$Group)<- c("B", "CD4T", "CD8T","Mono","NK","otherT" )
 
 # limma for observation
 obs_res<- computeObs(sim_cm, factor(sim$Group))
+obs.tstat<- obs_res$obs.tstat
+obs.t.pval<- obs_res$obs.t.pval
 
 # run permutation
 sim_perm_arrays <- tPerm(sim_cm, sim$Group)
 
 # permutation stats
-# modt.perm.array<- sim_perm_arrays$modet.perm
 t.perm.array<- sim_perm_arrays$t.perm
-
-
 
 # t-stat
 t.perm.pvals<-apply(expand.grid(x = 1:dim(sim_cm)[1], 
                            y = 1:dim(t.perm.array)[2]), 1, 
                 function(r) (sum(t.perm.array[r[1],r[2], ]> obs.tstat[r[1],r[2]])+1)/(perm.size+1) )
 
-(t.perm.pval<- matrix(t.perm.pvals, 
+t.perm.pval<- matrix(t.perm.pvals, 
                   nrow=dim(sim_cm)[1], 
                   ncol = dim(t.perm.array)[2], 
-                   byrow=FALSE))
+                   byrow=FALSE)
 rownames(t.perm.pval) <- row.names(sim_cm)
 colnames(t.perm.pval) <- colnames(sim_perm_arrays$ct.names)
 
 t.perm.pval.adj<- cbind(p.adjust(t.perm.pval[,1], method="BH"),
-                     p.adjust(t.perm.pval[,2], method="BH"))
+                     p.adjust(t.perm.pval[,2], method="BH"), 
+                     p.adjust(t.perm.pval[,3], method="BH"),
+                     p.adjust(t.perm.pval[,4], method="BH"),
+                     p.adjust(t.perm.pval[,5], method="BH"),
+                     p.adjust(t.perm.pval[,6], method="BH"))
 
 rownames(t.perm.pval.adj) <- row.names(sim_cm)
-colnames(t.perm.pval.adj) <- colnames(sim_perm_arrays$ct.names)
-
-z<-computeSummary(obs.t.pval, t.perm.pval, list(true.sup.g1, true.sup.g2), c(903, 97))
-z<-computeSummary(obs.t.pval.adj, t.perm.pval.adj, list(true.sup.g1, true.sup.g2), c(903, 97))
+colnames(t.perm.pval.adj) <- sim_perm_arrays$ct.names
 
 
+obs.t.pval.adj<- cbind(p.adjust(obs.t.pval[,1], method="BH"),
+                     p.adjust(obs.t.pval[,2], method="BH"),
+                     p.adjust(obs.t.pval[,3], method="BH"),
+                     p.adjust(obs.t.pval[,4], method="BH"),
+                     p.adjust(obs.t.pval[,5], method="BH"),
+                     p.adjust(obs.t.pval[,6], method="BH"))
+
+rownames(obs.t.pval.adj) <- row.names(sim_cm)
+colnames(obs.t.pval.adj) <- sim_perm_arrays$ct.names
+
+
+# obs.p, perm.p,adj, true.upreg, cell_num, main.describe, save.path
+
+      
+z<-computeSummary2(obs.t.pval, t.perm.pval,
+                  adj = "",
+                  true.upreg = list(true.sup.g1, true.sup.g2,true.sup.g3, true.sup.g4, true.sup.g5, true.sup.g6), 
+                  cell_num=as.vector(table(sim$Group)), main.describe = paste("60_681_67_47_67_78"))
+
+z.adj<-computeSummary2(obs.t.pval.adj, t.perm.pval.adj,
+                  adj = "adjusted",
+                  true.upreg = list(true.sup.g1, true.sup.g2,true.sup.g3, true.sup.g4, true.sup.g5, true.sup.g6), 
+                  cell_num=as.vector(table(sim$Group)), main.describe =  paste("60_681_67_47_67_78"))
+
+#df_raw<- z[[2]]
+#colnames(df_raw) 
+df_raw<- rbind(df_raw, z[[2]])
+
+#df_raw_adj<- z.adj[[2]]
+
+df_raw_adj<-rbind(df_raw_adj, z.adj[[2]])
 
 ```
+
+
+
+
+
+
+```{r}
+
+#df<- read.csv("simulation2.csv", header= TRUE, sep = ",")
+df_raw$group<- factor(df_raw$group)
+df_raw$simulation<- df_raw$group
+levels(df_raw$simulation) <- gsub("12_903_29_19_13_24", "simulation1", levels(df_raw$simulation))
+levels(df_raw$simulation) <- gsub("36_795_44_38_55_32", "simulation2", levels(df_raw$simulation))
+levels(df_raw$simulation) <- gsub("49_721_46_48_62_74", "simulation3", levels(df_raw$simulation))
+levels(df_raw$simulation) <- gsub("68_605_92_70_72_93", "simulation4", levels(df_raw$simulation))
+levels(df_raw$simulation) <- gsub("97_501_104_116_74_108", "simulation5", levels(df_raw$simulation))
+levels(df_raw$simulation) <- gsub("123_394_126_127_120_110", "simulation6", levels(df_raw$simulation))
+levels(df_raw$simulation) <- gsub("143_303_126_154_152_122", "simulation7", levels(df_raw$simulation))
+levels(df_raw$simulation) <- gsub("161_208_153_159_177_142", "simulation8", levels(df_raw$simulation))
+levels(df_raw$simulation) <- gsub("174_163_174_164_180_145", "simulation9", levels(df_raw$simulation))
+levels(df_raw$simulation) <- gsub("182_97_179_178_196_168", "simulation10", levels(df_raw$simulation))
+df_raw$simulation <- factor(df_raw$simulation, levels = c("simulation1", 
+                                                          "simulation2", "simulation3", "simulation4", 
+                                                          "simulation5", "simulation6","simulation7","simulation8","simulation9","simulation10"))
+df_raw_adj$simulation<- df_raw_adj$group
+levels(df_raw_adj$simulation) <- gsub("12_903_29_19_13_24", "simulation1", levels(df_raw_adj$simulation))
+levels(df_raw_adj$simulation) <- gsub("36_795_44_38_55_32", "simulation2", levels(df_raw_adj$simulation))
+levels(df_raw_adj$simulation) <- gsub("49_721_46_48_62_74", "simulation3", levels(df_raw_adj$simulation))
+levels(df_raw_adj$simulation) <- gsub("68_605_92_70_72_93", "simulation4", levels(df_raw_adj$simulation))
+levels(df_raw_adj$simulation) <- gsub("97_501_104_116_74_108", "simulation5", levels(df_raw_adj$simulation))
+levels(df_raw_adj$simulation) <- gsub("123_394_126_127_120_110", "simulation6", levels(df_raw_adj$simulation))
+levels(df_raw_adj$simulation) <- gsub("143_303_126_154_152_122", "simulation7", levels(df_raw_adj$simulation))
+levels(df_raw_adj$simulation) <- gsub("161_208_153_159_177_142", "simulation8", levels(df_raw_adj$simulation))
+levels(df_raw_adj$simulation) <- gsub("174_163_174_164_180_145", "simulation9", levels(df_raw_adj$simulation))
+levels(df_raw_adj$simulation) <- gsub("182_97_179_178_196_168", "simulation10", levels(df_raw_adj$simulation))
+df_raw_adj$simulation <- factor(df_raw_adj$simulation, levels = c("simulation1", 
+                                                          "simulation2", "simulation3", "simulation4", 
+                                                          "simulation5", "simulation6","simulation7","simulation8","simulation9","simulation10"))
+
+
+df_raw$cell.type<- factor(df_raw$cell.type)
+df_raw$test.name<- factor(df_raw$test.name)
+df_raw$precision<- df_raw$precision/100
+df_raw$sensitivity <- df_raw$sensitivity/100
+df_raw$FPR<-df_raw$FPR/100
+colnames(df_raw)
+
+
+df_raw_adj$precision<- df_raw_adj$precision/100
+df_raw_adj$sensitivity <- df_raw_adj$sensitivity/100
+df_raw_adj$FPR<-df_raw_adj$FPR/100
+df_raw_adj$group<- factor(df_raw_adj$group)
+df_raw_adj$cell.type<- factor(df_raw_adj$cell.type)
+df_raw_adj$test.name<- factor(df_raw_adj$test.name)
+
+library(ggplot2)
+library(reshape2)
+
+
+ggplot(data = df_raw, aes(x = simulation, y = num.upreg,colour = test.name, 
+                      group =test.name ))+
+  geom_line()+geom_point()+facet_wrap(~cell.type)+
+  geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+
+  scale_y_continuous(breaks = seq(0,5000,500))+ggtitle("raw pvalues")+
+  xlab("cell number proportion")+ylab("number of up-regulated genes")
+  #
+ggsave("simulation_result_num_upreg_raw.pdf", width = 8, height=6)
+
+
+
+ggplot(data = df_raw, aes(x = simulation, y = TP,colour = test.name, group =test.name ))+
+  geom_line()+geom_point()+facet_wrap(~cell.type)+ggtitle("raw pvalues")+
+  scale_y_continuous(breaks =c(10,30, 60, 90, 120), labels = c(10, 30, 60, 90, 120), 
+                     n.breaks = 5,minor_breaks = c(10, 30))+
+  geom_point(aes(y=num.true.upreg), size = 2, colour = 1, shape=1)+
+  
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+#ylim(0, 1)+
+  xlab("")+ylab("number of true up-regulated genes")
+ggsave("simulation_result_TP_raw.pdf", width = 8, height=6)
+
+
+
+
+
+ggplot(data = df_raw, aes(x = simulation, y = precision,colour = test.name, group =test.name ))+
+  geom_line()+geom_point()+facet_wrap(~cell.type)+
+  scale_y_continuous(breaks = seq(0,1,0.1))+
+  #geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+
+  xlab("")+ylab("precision")+ggtitle("raw pvalues")+ylim(0,1)
+ggsave("simulation_result_precision_raw.pdf", width = 8, height=6)
+
+ggplot(data = df_raw, aes(x = simulation, y = sensitivity,colour = test.name, group =test.name ))+
+  geom_line()+geom_point()+facet_wrap(~cell.type)+scale_y_continuous(breaks = seq(0,1,0.1))+
+  #geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+ggtitle("raw pvalues")+
+  xlab("")+ylab("sensitivity")+ylim(0,1)
+ggsave("simulation_result_sensitivity_raw.pdf", width = 8, height=6)
+
+ggplot(data = df_raw, aes(x = simulation, y = FPR,colour = test.name, group =test.name ))+
+  geom_line()+geom_point()+facet_wrap(~cell.type)+scale_y_continuous(breaks = seq(0,1,0.1))+
+  #geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+#ylim(0, 1)+
+  xlab("")+ylab("false positive rate")+ggtitle("raw pvalues")+ylim(0,1)
+ggsave("simulation_result_FPR_raw.pdf", width = 8, height=6)
+
+
+
+
+
+ggplot(data = df_raw_adj, aes(x = simulation, y = num.upreg,colour = test.name, 
+                      group =test.name ))+
+  geom_line()+geom_point()+facet_wrap(~cell.type)+
+  geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+
+  scale_y_continuous(breaks = seq(0,5000,500))+
+  xlab("")+ylab("number of up-regulated genes")+ggtitle("adjusted pvalues")
+  #
+ggsave("simulation_result_num_upreg_adj.pdf", width = 8, height=6)
+
+
+
+ggplot(data = df_raw_adj, aes(x = simulation, y = TP,colour = test.name, group =test.name ))+
+  geom_line()+geom_point()+facet_wrap(~cell.type)+ggtitle("adjusted pvalues")+
+ scale_y_continuous(breaks =c(10,30, 60, 90, 120), labels = c(10, 30,60, 90, 120), n.breaks = 5)+
+  geom_point(aes(y=num.true.upreg), size = 2, colour = 1, shape=1)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+
+  xlab("")+ylab("number of true up-regulated genes")
+ggsave("simulation_result_TP_adjusted.pdf", width = 8, height=6)
+
+
+ggplot(data = df_raw_adj, aes(x = simulation, y = precision,colour = test.name, group =test.name ))+
+  geom_line()+geom_point()+facet_wrap(~cell.type)+ggtitle("adjusted pvalues")+
+  scale_y_continuous(breaks = seq(0,1,0.1))+
+  #geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+#ylim(0, 1)+
+  xlab("")+ylab("precision")+ylim(0,1)
+ggsave("simulation_result_precision_adjusted.pdf", width = 8, height=6)
+
+ggplot(data = df_raw_adj, aes(x = simulation, y = sensitivity,colour = test.name, group =test.name ))+
+  geom_line()+geom_point()+facet_wrap(~cell.type)+ggtitle("adjusted pvalues")+
+  scale_y_continuous(breaks = seq(0,1,by=0.1),labels =seq(0,1,0.1))+ylim(0,1)+
+  #geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+
+  xlab("")+ylab("sensitivity")
+ggsave("simulation_result_sensitivity_adj.pdf", width = 8, height=6)
+
+ggplot(data = df_raw_adj, aes(x = simulation, y = FPR,colour = test.name, group =test.name ))+
+  geom_line()+geom_point()+facet_wrap(~cell.type)+ggtitle("adjusted pvalues")+
+  #geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+
+  xlab("")+ylab("false positive rate")+scale_y_continuous(breaks = seq(0,1,by=0.1))+ylim(0,1)
+ggsave("simulation_result_FPR_adjusted.pdf", width = 8, height=6)
+
+
+
+ggplot(data = df_raw_adj, aes(x = simulation, y = overlap,group =test.name ))+
+  geom_line()+geom_point()+facet_wrap(~cell.type)+ggtitle("adjusted pvalues")+
+  
+  #geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+
+  xlab("")+ylab("number of shared up-regulated ")
+ggsave("simulation_result_overlap.pdf", width = 8, height=6)
+
+
+
+ggplot(data = df_raw[df_raw$test.name == "limma", ], aes(y = num.cells, x = simulation, fill = cell.type))+
+  geom_bar(stat="identity", position = "stack")+ggtitle("cell type proportion")+
+  #geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+#ylim(0, 1)+
+  xlab("")+ylab("")
+ggsave("simulation_result_proportion.pdf", width = 8, height=6)
+
+
+
+
+
+library(ggpubr)
+#pdf("simulation_result.pdf")
+ggarrange(g1+rremove("xlab"), g2+rremove("xlab"), g3,
+          ncol = 1, nrow = 3)
+#dev.off()
+```
+
+```{r}
+g1
+```
+
+```{r}
+g2
+```
+
+
 
