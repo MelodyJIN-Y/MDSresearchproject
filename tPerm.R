@@ -52,5 +52,7 @@ tPerm<- function(cm, groups, perm.size = 1000){
   }
   toc(log=TRUE)
   
-  return (list(ct.names = colnames(fit.cont),t.perm = t.perm.array, modet.perm = modt.perm.array))
+  return (list(ct.names = colnames(fit.cont),
+               t.perm = t.perm.array, 
+               modet.perm = modt.perm.array))
 }

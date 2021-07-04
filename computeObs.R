@@ -1,5 +1,6 @@
 # cell.type is a factor containing the cell type for each cell 
 computeObs<- function(cm, cell.type){
+  
   logcounts.all <- lognormCounts(cm,log=TRUE,prior.count=0.5) 
   
   all.bct <- factor(cell.type)
@@ -13,7 +14,8 @@ computeObs<- function(cm, cell.type){
   mycont[lower.tri(mycont)]<- -1/(length(levels(all.bct))-1)
   
   # Fill out remaining rows with 0s
-  zero.rows <- matrix(0,ncol=length(levels(all.bct)),nrow=(ncol(design)-length(levels(all.bct))))
+  zero.rows <- matrix(0,ncol=length(levels(all.bct)),
+                      nrow=(ncol(design)-length(levels(all.bct))))
   test <- rbind(mycont,zero.rows)
   
   fit.obs <- lmFit(logcounts.all,design)
@@ -31,6 +33,7 @@ computeObs<- function(cm, cell.type){
   
   obs.mod.pval<- pt(obs.modtstat, df=fit.cont.eb.obs$df.total, lower.tail=FALSE)
   return (list(obs.tstat = obs.tstat, obs.t.pval = obs.t.pval, 
-               obs.modtstat= obs.modtstat, obs.mod.pval= obs.mod.pval))
+               obs.modtstat= obs.modtstat, obs.mod.pval= obs.mod.pval, 
+               fit.cont.eb.obs = fit.cont.eb.obs))
   
 }
