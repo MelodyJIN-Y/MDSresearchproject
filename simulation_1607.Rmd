@@ -1,0 +1,530 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+
+library(Seurat)
+library(dplyr)
+library(SingleCellExperiment)
+library(scater)
+library(splatter)
+library(reshape2)
+library(pROC)
+
+pbmc.data<- readRDS("pbmc_pooled_sex.Rds")
+cm<- pbmc.data@assays$RNA@counts
+table(pbmc.data$individual)
+
+#subset_ind<- c("685_686", "689_690","691_692")
+#cm<- pbmc.data[, pbmc.data$individual %in% subset_ind ]@assays$RNA@counts
+cm<- pbmc.data[, pbmc.data$individual == "689_690"]@assays$RNA@counts
+dim(cm) # 32738  3402 (1789+1613) $32738  4907
+
+pbmc <- CreateSeuratObject(counts = cm,min.features = 500, min.cells = 5)
+
+
+
+cm<-pbmc@assays$RNA@counts
+ann.all<- readRDS("allpbmc.Rds")
+numzero.genes <- rowSums(cm==0)
+keep.genes <- numzero.genes < (ncol(cm)-10)
+all.keep <- cm[keep.genes,]
+ann.keep.all <- ann.all[keep.genes,]
+cm.processed<- all.keep
+
+
+# with one cell type from one individual
+selected_cells <- colnames(cm.processed[,pbmc.data[,colnames(cm.processed)]$predicted.celltype.l1 =="CD4 T"])
+cm.processed.r<- cm.processed[, match(selected_cells, colnames(cm.processed))]
+metadata <- data.frame(cell_type = pbmc.data[row.names(cm.processed.r),colnames(cm.processed.r)]$predicted.celltype.l1,
+                       ind = '689_690')
+
+#sce <- SingleCellExperiment(assays = as.matrix(cm.processed.r),
+#                            colData=metadata)
+
+sce <- SingleCellExperiment(list(counts=as.matrix(cm.processed.r)),colData=metadata)
+
+
+```
+
+
+check simulation 
+```{r}
+
+# PCA for original CD4T 
+# compare plots for real data and simulation 
+
+table(sce$cell_type)
+curr_params <- newSplatParams()
+# params <- setParam(params, "group.prob", ct_prop)
+curr_params <- splatEstimate(sce,params = curr_params)
+# SplatParams
+sim <- splatSimulate(curr_params, method = "groups", nGenes = 5000,
+                     batchCells = 1000, dropout.type = "none", out.prob = 0, 
+                     de.prob = c(0.02, 0.02),de.downProb = c(0, 0),
+                     group.prob = c(0.5, 0.5),
+                     seed = seed.number[[2]], 
+                     de.facLoc = c(2,2),
+                     #de.facScale = c(0.3, 0.3),
+                     verbose = FALSE)
+numzero.genes <- rowSums(counts(sim)==0)
+keep.genes <- numzero.genes < (ncol(counts(sim))-10)
+sim<- sim[keep.genes, ]
+
+
+sim <- logNormCounts(sim)
+sim <- runPCA(sim)
+plotPCA(sim, colour_by = "Group")+ggtitle("simulated CD4T cells")+ 
+  theme(plot.title = element_text(size = 20, face = "bold"))
+ggsave("simulated_cd4T_pca.pdf", width = 8, height=6)
+
+
+
+table(sce$cell_type)
+curr_params <- newSplatParams()
+# params <- setParam(params, "group.prob", ct_prop)
+curr_params <- splatEstimate(sce,params = curr_params)
+
+
+```
+
+```{r}
+
+groups_lst<- list(c(0.01, 0.99),
+                  c(0.05, 0.95),
+                  c(0.1, 0.9),
+                  c(0.15, 0.85),
+                  c(0.2, 0.8),
+                  c(0.3, 0.7),
+                  c(0.4, 0.6),
+                  c(0.5, 0.5),
+                  c(0.6, 0.4),
+                  c(0.7, 0.3),
+                  c(0.8, 0.2),
+                  c(0.85, 0.15),
+                  c(0.9, 0.1),
+                  c(0.95, 0.05),
+                  c(0.99, 0.01)
+                  )
+perm.size = 1000
+set.seed(12202)
+seed.number.cp <- sample(x = 100:10000, size = length(groups_lst), replace = FALSE) #length(groups_lst))
+rep<- 30
+
+
+#for (m in 1:length(groups_lst)){
+for (m in 1:1){
+  print(m)
+  set.seed(seed.number.cp[3])
+  seed.number <- sample(x = 80:seed.number.cp[3], size = rep, replace = FALSE)
+  for (r in 1:rep){
+    sim <- splatSimulate(curr_params, method = "groups", nGenes = 5000,
+                     batchCells = 1000, dropout.type = "none", out.prob = 0, 
+                     de.prob = c(0.02, 0.02), de.downProb = c(0, 0),
+                     group.prob = groups_lst[[3]],
+                     seed = 336,#seed.number[2], 
+                     de.facLoc = c(2,2),
+                     #de.facScale = c(0.3, 0.3),
+                     verbose = FALSE)
+  numzero.genes <- rowSums(counts(sim) ==0)
+  keep.genes <- numzero.genes < (ncol(counts(sim))-10)
+  sim<- sim[keep.genes, ]
+  
+  obs_res<- computeObs(counts(sim), factor(sim$Group))
+  obs.tstat<- obs_res$obs.tstat
+  obs.t.pval<- obs_res$obs.t.pval
+  
+  # run permutation
+  sim_perm_arrays <- tPerm(counts(sim), sim$Group, perm.size=perm.size)
+  
+  # permutation stats
+  t.perm.array<- sim_perm_arrays$t.perm
+  
+  # t-stat
+  t.perm.pvals<-apply(expand.grid(x = 1:dim(counts(sim))[1], 
+                                  y = 1:dim(t.perm.array)[2]), 1, 
+                      function(r) (sum(t.perm.array[r[1],r[2], ] > obs.tstat[r[1],r[2]])+1)/(perm.size+1) )
+  
+  t.perm.pval<- matrix(t.perm.pvals, 
+                       nrow=dim(counts(sim))[1], 
+                       ncol = dim(t.perm.array)[2], 
+                       byrow=FALSE)
+  rownames(t.perm.pval) <- row.names(counts(sim))
+  colnames(t.perm.pval) <- colnames(sim_perm_arrays$ct.names)
+ # saveRDS(t.perm.pval,"t.perm.pval_1940.Rds")
+#  saveRDS(obs.t.pval,"obs.t.pval_1940.Rds")
+
+  #zero.sim<- readRDS("zero.t.perm.pval.Rds")
+  t.perm.pval.adj<- cbind(p.adjust(t.perm.pval[,1], method="BH"),
+                          p.adjust(t.perm.pval[,2], method="BH")
+                          ) 
+  t.perm.pval.adj<- as.data.frame(t.perm.pval.adj)
+  rownames(t.perm.pval.adj) <- row.names(counts(sim))
+  colnames(t.perm.pval.adj) <- sim_perm_arrays$ct.names
+  
+  
+  obs.t.pval.adj<- cbind(p.adjust(obs.t.pval[,1], method="BH"),
+                         p.adjust(obs.t.pval[,2], method="BH")
+                         )
+  obs.t.pval.adj <- as.data.frame(obs.t.pval.adj)
+  rownames(obs.t.pval.adj) <- row.names(counts(sim))
+  colnames(obs.t.pval.adj) <- sim_perm_arrays$ct.names
+  
+ # top.T <- topTable(obs_res$fit.cont.eb.obs,sort="none",number = nrow(obs_res$fit.cont.eb.obs))
+ #  logFC<- top.T[, 4:9]
+
+  true.sup.g1<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup1 > 1, "Gene"]
+  true.sup.g2<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup2 > 1, "Gene"]
+  true.sup.g1<- intersect(true.sup.g1, row.names(sim))
+  true.sup.g2<- intersect(true.sup.g2, row.names(sim))
+  true.upreg = list(true.sup.g1, true.sup.g2)
+  
+  # plotMA()
+  #pred.c1<- as.vector(ifelse(test=(t.perm.pval[,1] < 0.05), yes=1, no=0))
+  #pred.c2<- as.vector(ifelse(test=(t.perm.pval[,2] < 0.05), yes=1, no=0))
+  lst<- list(permutation = t.perm.pval,limma= obs.t.pval)
+  lst.names<- list("permutation", "limma")
+  pdf("roc_plot_s1940.pdf")
+  for( i in 1:length(lst)){
+  
+  pred.c1<-lst[[i]][,1]
+  pred.c2<-lst[[i]][,2]
+  resp.c1 <- as.vector(ifelse(test=(sim@rowRanges@elementMetadata$DEFacGroup1 > 1), 
+                              yes=1, no=0))
+  
+  resp.c2 <- as.vector(ifelse(test=(sim@rowRanges@elementMetadata$DEFacGroup2 > 1), 
+                               yes=1, no=0))
+  roc_c1 <-roc( response=resp.c1, predictor= pred.c1,plot=FALSE, 
+                 legacy.axes=TRUE, percent=TRUE, 
+                 xlab="False Positive Percentage", ylab="True Postive Percentage")
+  
+  roc.df <- data.frame(tpp=roc_c1$sensitivities,
+                       fpp=(1 - roc_c1$specificities),
+                       thresholds=roc_c1$thresholds)
+
+  roc_c2 <-roc( response =resp.c2, predictor=pred.c2, plot=FALSE, 
+                 legacy.axes=TRUE, percent=TRUE, 
+                 xlab="False Positive Percentage", ylab="True Postive Percentage")
+  
+  par(pty = "s")
+  
+  roc(response=resp.c1, predictor=pred.c1,plot=TRUE, 
+      legacy.axes=TRUE, percent=TRUE, col="darkgreen",main=lst.names[[i]],
+      xlab="False Positive Percentage", ylab="True Postive Percentage",
+      print.auc=TRUE, print.auc.x=80, print.auc.y=50)
+  
+  plot.roc(roc_c2, predictor=pred.c2,
+           percent=TRUE, col="blue", lwd=2, print.auc=TRUE, add=TRUE, 
+           print.auc.x=80, print.auc.y=60)
+  legend("bottomright", legend=c("group1", "group2"), col=c("darkgreen", "blue"), lwd=4)
+
+  }
+  dev.off()
+   pdf("cumsum_plot_s1940.pdf")
+  # cumsum plot of adjusuted p-values 
+  for (i in 1:ncol(obs.t.pval)){
+    pv.obs<-as.data.frame(matrix(0, ncol = 2, nrow = nrow(obs.t.pval)))
+    pv.perm<- as.data.frame(matrix(0, ncol = 2, nrow = nrow(obs.t.pval)))
+    pv.obs[, 1]<- obs.t.pval[, i]
+    pv.perm[, 1]<- t.perm.pval[, i]
+    pv.obs[, 2]<- 0
+    pv.perm[, 2]<- 0
+    pv.obs[match(true.upreg[[i]],row.names(obs.t.pval)),2]<- 1
+    pv.perm[match(true.upreg[[i]],row.names(t.perm.pval)),2]<- 1
+    pv.obs<- pv.obs[order(pv.obs[,1]), ]
+    pv.perm<- pv.perm[order(pv.perm[,1]), ]
+    plot(cumsum(pv.obs[1:500,2]), type="s",main = colnames(obs.t.pval)[i], ylab = "cumsum p values")
+    lines(cumsum(pv.perm[1:500,2]), type="s",col = "blue")
+    abline(a=0, b=1, col="red")
+    legend(x = "bottomright",          
+       legend = c("limma", "permutation"),
+       col = c("black", "blue"),           
+       lwd = 2)    
+  }
+  dev.off()
+  
+  # 
+  
+  summary(as.vector(counts(sim[,sim$Group=="Group1"])[match(true.sup.g1, row.names(sim)), ]))
+  summary(as.vector(counts(sim[,sim$Group=="Group2"])[match(true.sup.g1, row.names(sim)), ]))
+  
+  logcounts.all <- lognormCounts(counts(sim),log=TRUE,prior.count=0.5) 
+  all.bct <- factor(sim$Group)
+  design <- model.matrix(~0+all.bct)
+  colnames(design)[1:(length(levels(all.bct)))] <- levels(all.bct)
+  mycont <- matrix(0,ncol=length(levels(all.bct)),nrow=length(levels(all.bct)))
+  colnames(mycont)<-levels(all.bct)
+  diag(mycont)<-1
+  mycont[upper.tri(mycont)]<- -1/(length(levels(all.bct))-1)
+  mycont[lower.tri(mycont)]<- -1/(length(levels(all.bct))-1)
+  mycont
+  # Fill out remaining rows with 0s
+  zero.rows <- matrix(0, ncol=length(levels(all.bct)),
+                      nrow=(ncol(design)-length(levels(all.bct))))
+  test <- rbind(mycont,zero.rows)
+  test
+  fit.obs <- lmFit(logcounts.all,design)
+  fit.contrast <- contrasts.fit(fit.obs,contrasts=test)
+  
+  fit.cont.eb.obs <- eBayes(fit.contrast,trend=TRUE,robust=TRUE)
+  
+  dt<-decideTests(fit.cont.eb.obs)
+  tp.g1<- row.names(fit.cont.eb.obs) %in% true.sup.g1
+  tp.g2<- row.names(fit.cont.eb.obs) %in% true.sup.g2
+  pdf("MA_plot_s1940.pdf")
+  limma::plotMA(fit.cont.eb.obs, coef=1, status =tp.g1, main = "Group1 true DE", 
+                legend = "bottomright") #values=c("not significant", "significant"))
+  
+  limma::plotMA(fit.cont.eb.obs, coef=2, status =tp.g2, main = "Group2 true DE",
+                legend = "bottomright")
+  
+  limma::plotMA(fit.cont.eb.obs, coef=1, status = dt[,1], main = "Group 1 (limma)")
+  
+  limma::plotMA(fit.cont.eb.obs, coef=2, status = dt[,2], main = "Group 2 (limma)")
+  
+  #plotSA(fit.cont.eb.obs)
+  
+  # plot for permutation
+  sig<- row.names(t.perm.pval.adj)[t.perm.pval.adj$Group1<0.05]
+  perm.g1<- row.names(fit.cont.eb.obs) %in% sig #DE genes perm
+  limma::plotMA(fit.cont.eb.obs, coef=1, status=perm.g1, main = "Group 1 (permutation)")
+  
+  sig<- row.names(t.perm.pval.adj)[t.perm.pval.adj$Group2<0.05]
+  perm.g2<- row.names(fit.cont.eb.obs) %in% sig #DE genes perm
+  limma::plotMA(fit.cont.eb.obs, coef=2, status=perm.g2, main = "Group 2 (permutation)")
+  
+  dev.off()
+  
+  
+  
+  z<-computeSummary3(obs.t.pval, t.perm.pval,
+                     adj = "",
+                     true.upreg = list(true.sup.g1, true.sup.g2), 
+                     cell_num = as.vector(table(sim$Group)), 
+                     main.describe = paste(as.character(table(sim$Group)),collapse="_"))
+  
+  z.adj<-computeSummary3(obs.t.pval.adj, t.perm.pval.adj,
+                         adj = "adjusted",
+                         true.upreg = list(true.sup.g1, true.sup.g2), 
+                         cell_num=as.vector(table(sim$Group)), 
+                         main.describe = paste(as.character(table(sim$Group)),collapse="_"))
+  if (any(z.adj$TP == 0 )){
+    # try a different cutoff intead of doing multiple testing adjustment 
+    
+  if (!exists("df_raw_adj2")) {
+    z2<-computeSummary3(obs.t.pval, t.perm.pval,
+                     adj = "",
+                     true.upreg = list(true.sup.g1, true.sup.g2), 
+                     cell_num = as.vector(table(sim$Group)), 
+                     main.describe = paste(as.character(table(sim$Group)),collapse="_"),  cutoff=0.001)
+    df_raw_adj2<- z2
+  }
+  
+  for (i in seq(0.002, 0.05, 0.001)){
+    z2<-computeSummary3(obs.t.pval, t.perm.pval,
+                     adj = "",
+                     true.upreg = list(true.sup.g1, true.sup.g2), 
+                     cell_num = as.vector(table(sim$Group)), 
+                     main.describe = paste(as.character(table(sim$Group)),collapse="_"),  cutoff=i)
+    df_raw_adj2<- rbind(df_raw_adj2,z2)
+    
+    
+  }
+
+  }
+  if (m == 1 & r == 1){
+    df_raw<- z
+    df_raw_adj<-z.adj
+  }else{
+    df_raw<- rbind(df_raw, z)
+    df_raw_adj<-rbind(df_raw_adj, z.adj)
+  }
+  
+  }
+}
+
+```
+
+effect of different pvalue cutoff
+```{r}
+df_raw_adj2$test.name<- as.factor(df_raw_adj2$test.name)
+library(ggpubr)
+
+s<-  ggplot(data = s336_df, aes(x = cutoff, y = sensitivity,colour = cell.type ))+
+  geom_line()+geom_point()+facet_wrap(~test.name)+
+  #geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+
+  scale_x_continuous(breaks = seq(0,0.05,by=0.005),
+                     labels = c(0.001, seq(0,0.05,by=0.005)[2:11]))+
+  xlab("pvalue cutoff")+ylab("sensitivity")+ #+ggtitle("adjusted pvalues")+
+  geom_text(aes(x=0.03, y=z.adj[1, "sensitivity"]), label="Limma", colour="#F8766D",size=3)+
+  geom_text(aes( x=0.03, y=z.adj[2, "sensitivity"]), label="Limma", colour="#00BFC4",size=3)+
+ geom_text(aes(x=0.04, y=z.adj[3, "sensitivity"]), label="Permutation", colour="#F8766D", size=3)+
+ geom_text(aes(x=0.04, y=z.adj[4, "sensitivity"]), label="Permutation", colour="#00BFC4", size=3)
+
+p<- ggplot(data = s336_df, aes(x = cutoff, y = precision,colour = cell.type ))+
+  geom_line()+geom_point(size=0.5)+facet_wrap(~test.name)+
+  #geom_point(aes(y=num.cells), size = 2, colour = 1, shape=2)+
+  theme(axis.text.x = element_text(angle=90), legend.title=element_blank())+
+  scale_x_continuous(breaks = seq(0,0.05,by=0.005),
+                     labels = c(0.001, seq(0,0.05,by=0.005)[2:11]))+
+  xlab("pvalue cutoff")+ylab("precision")+
+  geom_hline(yintercept = z.adj[1, "precision"], linetype= "dashed", colour="darkblue")+
+  geom_text(aes(x=0.03, y=z.adj[1, "precision"]), label="Limma", colour="#F8766D",size=3)+
+  geom_text(aes( x=0.03, y=z.adj[2, "precision"]), label="Limma", colour="#00BFC4",size=3)+
+ geom_text(aes(x=0.04, y=z.adj[3, "precision"]), label="Permutation", colour="#F8766D", size=3)+
+ geom_text(aes(x=0.04, y=z.adj[4, "precision"]), label="Permutation", colour="#00BFC4", size=3)
+
+
+pdf("sensitivity_precision_cutoff_seed336.pdf", width = 12, height=6)
+ggarrange(s+rremove("legend"), p, widths=c(1,1.3),
+          #labels = c("A", "B", "C"),
+          ncol = 2, nrow = 1)
+dev.off()
+
+s336_df<- df_raw_adj2
+```
+
+
+
+```{r}
+
+groups_lst<- list(c(0.01, 0.99),
+                  c(0.05, 0.95),
+                  c(0.1, 0.9),
+                  c(0.15, 0.85),
+                  c(0.2, 0.8),
+                  c(0.3, 0.7),
+                  c(0.4, 0.6),
+                  c(0.5, 0.5),
+                  c(0.6, 0.4),
+                  c(0.7, 0.3),
+                  c(0.8, 0.2),
+                  c(0.85, 0.15),
+                  c(0.9, 0.1),
+                  c(0.95, 0.05),
+                  c(0.99, 0.01)
+                  )
+perm.size = 1000
+set.seed(12202)
+seed.number.cp <- sample(x = 100:10000, size = length(groups_lst), replace = FALSE) #length(groups_lst))
+rep<- 10
+
+
+#for (m in 1:length(groups_lst)){
+for (m in 1:1){
+  print(m)
+  set.seed(seed.number.cp[2])
+  seed.number <- sample(x = 80:seed.number.cp[2], size = rep, replace = FALSE)
+  for (r in 1:rep){
+    sim <- splatSimulate(curr_params, method = "groups", nGenes = 5000,
+                     batchCells = 1000, dropout.type = "none", out.prob = 0, 
+                     de.prob = c(0.02, 0.02), de.downProb = c(0, 0),
+                     group.prob = groups_lst[[2]],
+                     seed = 1940, #seed.number[r],  #  4856
+                     de.facLoc = c(2,2),
+                     #de.facScale = c(0.3, 0.3),
+                     verbose = FALSE)
+  numzero.genes <- rowSums(counts(sim) ==0)
+  keep.genes <- numzero.genes < (ncol(counts(sim))-10)
+  sim<- sim[keep.genes, ]
+  
+  obs_res<- computeObs(counts(sim), factor(sim$Group))
+  obs.tstat<- obs_res$obs.tstat
+  obs.t.pval<- obs_res$obs.t.pval
+  
+  # run permutation
+  sim_perm_arrays <- tPerm(counts(sim), sim$Group)
+  
+  # permutation stats
+  t.perm.array<- sim_perm_arrays$t.perm
+  
+  # t-stat
+  t.perm.pvals<-apply(expand.grid(x = 1:dim(counts(sim))[1], 
+                                  y = 1:dim(t.perm.array)[2]), 1, 
+                      function(r) (sum(t.perm.array[r[1],r[2], ] > obs.tstat[r[1],r[2]])+1)/(perm.size+1) )
+  
+  t.perm.pval<- matrix(t.perm.pvals, 
+                       nrow=dim(counts(sim))[1], 
+                       ncol = dim(t.perm.array)[2], 
+                       byrow=FALSE)
+  rownames(t.perm.pval) <- row.names(counts(sim))
+  colnames(t.perm.pval) <- colnames(sim_perm_arrays$ct.names)
+ # saveRDS(t.perm.pval,"t.perm.pval_1940.Rds")
+#  saveRDS(obs.t.pval,"obs.t.pval_1940.Rds")
+
+  #zero.sim<- readRDS("zero.t.perm.pval.Rds")
+  t.perm.pval.adj<- cbind(p.adjust(t.perm.pval[,1], method="BH"),
+                          p.adjust(t.perm.pval[,2], method="BH")
+                          ) 
+  t.perm.pval.adj<- as.data.frame(t.perm.pval.adj)
+  rownames(t.perm.pval.adj) <- row.names(counts(sim))
+  colnames(t.perm.pval.adj) <- sim_perm_arrays$ct.names
+  
+  
+  obs.t.pval.adj<- cbind(p.adjust(obs.t.pval[,1], method="BH"),
+                         p.adjust(obs.t.pval[,2], method="BH")
+                         )
+  obs.t.pval.adj <- as.data.frame(obs.t.pval.adj)
+  rownames(obs.t.pval.adj) <- row.names(counts(sim))
+  colnames(obs.t.pval.adj) <- sim_perm_arrays$ct.names
+  
+ # top.T <- topTable(obs_res$fit.cont.eb.obs,sort="none",number = nrow(obs_res$fit.cont.eb.obs))
+ #  logFC<- top.T[, 4:9]
+
+  true.sup.g1<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup1 > 1, "Gene"]
+  true.sup.g2<- sim@rowRanges@elementMetadata[sim@rowRanges@elementMetadata$DEFacGroup2 > 1, "Gene"]
+  true.sup.g1<- intersect(true.sup.g1, row.names(sim))
+  true.sup.g2<- intersect(true.sup.g2, row.names(sim))
+  true.upreg = list(true.sup.g1, true.sup.g2)
+  
+  
+  z<-computeSummary3(obs.t.pval, t.perm.pval,
+                     adj = "",
+                     true.upreg = list(true.sup.g1, true.sup.g2), 
+                     cell_num = as.vector(table(sim$Group)), 
+                     main.describe = paste(as.character(table(sim$Group)),collapse="_"))
+  
+  z.adj<-computeSummary3(obs.t.pval.adj, t.perm.pval.adj,
+                         adj = "adjusted",
+                         true.upreg = list(true.sup.g1, true.sup.g2), 
+                         cell_num=as.vector(table(sim$Group)), 
+                         main.describe = paste(as.character(table(sim$Group)),collapse="_"))
+  #if (any(z.adj$TP == 0 )){
+    # try a different cutoff intead of doing multiple testing adjustment 
+    
+  if (!exists("df_raw_adj2")) {
+    z2<-computeSummary3(obs.t.pval, t.perm.pval,
+                     adj = "",
+                     true.upreg = list(true.sup.g1, true.sup.g2), 
+                     cell_num = as.vector(table(sim$Group)), 
+                     main.describe = paste(as.character(table(sim$Group)),collapse="_"),  cutoff=0.001)
+    df_raw_adj2<- z2
+  }
+  
+  for (i in seq(0.002, 0.05, 0.001)){
+    z2<-computeSummary3(obs.t.pval, t.perm.pval,
+                     adj = "",
+                     true.upreg = list(true.sup.g1, true.sup.g2), 
+                     cell_num = as.vector(table(sim$Group)), 
+                     main.describe = paste(as.character(table(sim$Group)),collapse="_"),  cutoff=i)
+    df_raw_adj2<- rbind(df_raw_adj2,z2)
+    
+    
+  }
+
+ # }
+  if (m == 1 & r == 1){
+    df_raw<- z
+    df_raw_adj<-z.adj
+  }else{
+    df_raw<- rbind(df_raw, z)
+    df_raw_adj<-rbind(df_raw_adj, z.adj)
+  }
+  
+  }
+}
+```
+
