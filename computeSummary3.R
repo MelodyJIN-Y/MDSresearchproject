@@ -1,9 +1,10 @@
-computeSummary3<- function(obs.p, perm.p, adj, true.upreg, cell_num, main.describe){
+computeSummary3<- function(obs.p, perm.p, adj, true.upreg, cell_num, main.describe, cutoff=0.05){
   #setwd("/Users/MelodyJin/Desktop/MAST90108/MDSresearchproject/simulation_plots")
   summ<- as.data.frame(matrix(NA, nrow =ncol(obs.p)*2 , ncol =11))
   colnames(summ)<- c("group","cell.type","num.cells", "test.name", "num.true.upreg","num.upreg",
-                         "TP", "precision", "sensitivity","FPR","overlap")
+                         "TP", "precision", "sensitivity","overlap","cutoff")
   summ[, "group"]<- main.describe
+  summ[, "cutoff"]<- cutoff
   summ[, "cell.type"]<- rep(colnames(obs.p), 2)
   summ[, "test.name"]<- "permutation"
   # summ[, "num.cells"]<- rep(as.numeric(summ["#cells", ]), 2)
@@ -12,12 +13,12 @@ computeSummary3<- function(obs.p, perm.p, adj, true.upreg, cell_num, main.descri
   
   for (i in 1: ncol(obs.p)){
     # positive genes 
-    limma_upreg_genes =  row.names(obs.p[which(obs.p[,i] < 0.05),])
-    perm_upreg_genes =  row.names(perm.p[which(perm.p[,i] < 0.05),])
+    limma_upreg_genes =  row.names(obs.p[which(obs.p[,i] < cutoff),])
+    perm_upreg_genes =  row.names(perm.p[which(perm.p[,i] < cutoff),])
     
     # negative genes 
-    limma_nonsig_genes =  row.names(obs.p[which(obs.p[,i]>=0.05),])
-    perm_nonsig_genes =  row.names(perm.p[which(perm.p[,i]>=0.05),])
+    limma_nonsig_genes =  row.names(obs.p[which(obs.p[,i]>=(1-cutoff)),])
+    perm_nonsig_genes =  row.names(perm.p[which(perm.p[,i]>=(1-cutoff)),])
     
     # metrics 
     tp.l<- length(intersect(limma_upreg_genes, true.upreg[[i]]))
@@ -42,14 +43,14 @@ computeSummary3<- function(obs.p, perm.p, adj, true.upreg, cell_num, main.descri
     summ[i, "TP"]<- tp.l
     summ[i+ncol(obs.p), "TP"]<- tp.p
     
-    summ[i, "precision"]<- 100*round(tp.l/(tp.l+fp.l),5)
-    summ[i+ncol(obs.p), "precision"]<- 100*round(tp.p/(tp.p+fp.p),5)
+    summ[i, "precision"]<- round(tp.l/(tp.l+fp.l),5)
+    summ[i+ncol(obs.p), "precision"]<- round(tp.p/(tp.p+fp.p),5)
       
-    summ[i, "sensitivity"]<- 100*round(tp.l/(tp.l+fn.l),5)
-    summ[i+ncol(obs.p), "sensitivity"]<- 100*round(tp.p/(tp.p+fn.p),5)
+    summ[i, "sensitivity"]<- round(tp.l/(tp.l+fn.l),5)
+    summ[i+ncol(obs.p), "sensitivity"]<- round(tp.p/(tp.p+fn.p),5)
     
-    summ[i, "FPR"]<- 100*round(fp.l/(fp.l+tn.l), 5)
-    summ[i+ncol(obs.p), "FPR"]<- 100*round(fp.p/(fp.p+tn.p), 5)
+    #summ[i, "FPR"]<- round(fp.l/(fp.l+tn.l), 5)
+    #summ[i+ncol(obs.p), "FPR"]<- round(fp.p/(fp.p+tn.p), 5)
     
     summ[i, "overlap"]<- length(intersect(limma_upreg_genes, perm_upreg_genes))
     summ[i+ncol(obs.p), "overlap"]<- length(intersect(limma_upreg_genes, perm_upreg_genes))
@@ -66,11 +67,11 @@ computeSummary3<- function(obs.p, perm.p, adj, true.upreg, cell_num, main.descri
   for (i in 1:ncol(obs.p)){
     hist(obs.p[,i],
          main = paste(adj, "p-values by limma", "-", colnames(obs.p)[i],"cells"), 
-         xlab  =(paste(adj, "p-values (t)")))
+         xlab  =(paste(adj, "p-values")))
     
     hist(perm.p[,i],
          main = paste(adj, "p-values by permutation", "-", colnames(obs.p)[i],"cells"), 
-         xlab  =(paste(adj, "p-values (t)")))
+         xlab  =(paste(adj, "p-values")))
     
   }
   
@@ -119,11 +120,16 @@ computeSummary3<- function(obs.p, perm.p, adj, true.upreg, cell_num, main.descri
                       #"e"=perm.p[match(perm_upreg_genes, row.names(perm.p)),5 ],
                       #"f"=perm.p[match(perm_upreg_genes, row.names(perm.p)),6 ]
                       )
-      #boxplot(perm.p[match(perm_upreg_genes, row.names(perm.p)), ],
-      #        data = perm.p, 
-      #        main=(paste("up-regulated genes for",colnames(perm.p)[i],"cells by limma")),
-      #        names = colnames(obs.p))
-      #abline(h=0.05, lty=2, col = "red", lwd = 2)
+      boxplot(perm.p[match(perm_upreg_genes, row.names(perm.p)), ],
+              data = perm.p, 
+              main=(paste("up-regulated genes for",colnames(perm.p)[i],"cells by permutation")),
+              names = colnames(obs.p))
+      abline(h=0.05, lty=2, col = "red", lwd = 2)
+      boxplot(obs.p[match(limma_upreg_genes, row.names(obs.p)), ],
+              data = obs.p, 
+              main=(paste("up-regulated genes for",colnames(perm.p)[i],"cells by limma")),
+              names = colnames(obs.p))
+      abline(h=0.05, lty=2, col = "red", lwd = 2)
       
       stripchart(lst.perm,ylab =(paste(adj,"pvalue by permutation")), 
                  data=perm.p,method = "jitter",jitter=0.2,
