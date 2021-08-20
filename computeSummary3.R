@@ -1,10 +1,13 @@
-computeSummary3<- function(obs.p, perm.p, adj, true.upreg, cell_num, main.describe, cutoff=0.05){
+computeSummary3<- function(obs.p, perm.p, adj, true.upreg, cell_num, main.describe, 
+                           seed.number, cutoff=0.05, perm.size=1000, auc.values){
   #setwd("/Users/MelodyJin/Desktop/MAST90108/MDSresearchproject/simulation_plots")
-  summ<- as.data.frame(matrix(NA, nrow =ncol(obs.p)*2 , ncol =11))
+  summ<- as.data.frame(matrix(NA, nrow =ncol(obs.p)*2 , ncol =14))
   colnames(summ)<- c("group","cell.type","num.cells", "test.name", "num.true.upreg","num.upreg",
-                         "TP", "precision", "sensitivity","overlap","cutoff")
+                         "TP", "precision", "sensitivity","overlap","cutoff","perm.size","seed.number","AUC")
   summ[, "group"]<- main.describe
   summ[, "cutoff"]<- cutoff
+  summ[, "perm.size"]<- perm.size
+  summ[, "seed.number"]<- seed.number
   summ[, "cell.type"]<- rep(colnames(obs.p), 2)
   summ[, "test.name"]<- "permutation"
   # summ[, "num.cells"]<- rep(as.numeric(summ["#cells", ]), 2)
@@ -55,6 +58,9 @@ computeSummary3<- function(obs.p, perm.p, adj, true.upreg, cell_num, main.descri
     summ[i, "overlap"]<- length(intersect(limma_upreg_genes, perm_upreg_genes))
     summ[i+ncol(obs.p), "overlap"]<- length(intersect(limma_upreg_genes, perm_upreg_genes))
     
+    summ[i, "AUC"]<- auc.values[i]
+    summ[i+ncol(obs.p), "AUC"]<- auc.values[i+ncol(obs.p)]
+    
   }
   if (adj  == ""){
     pdf(paste(main.describe, "sim.pdf",  sep="."))
@@ -74,27 +80,85 @@ computeSummary3<- function(obs.p, perm.p, adj, true.upreg, cell_num, main.descri
          xlab  =(paste(adj, "p-values")))
     
   }
+
+  df.p<- as.data.frame(rbind(cbind("genes" = row.names(obs.p), "test.names"=rep("limma", nrow(obs.p)), 
+                                                "group1" = obs.p[,1], "group2" = obs.p[,2]),
+                             cbind("genes" = row.names(perm.p), "test.names" =rep("permutation", nrow(perm.p)),
+                                   "group1" = perm.p[,1], "group2" = perm.p[,2])))
+  colnames(df.p)<- c("genes", "test.name", "group1", "group2")#,"treu.DE")
+  df.p[,3]<- as.numeric(df.p[,3])
+  df.p[,4]<- as.numeric(df.p[,4])
+  df.pv<- melt(df.p, id = c("test.name","genes"), value.name = "pvalue", variable.name = "group")
+  df.pv$true.de<- 0
+  df.pv$TP<- 0
+  for (i in 1: ncol(obs.p)){
+    df.pv[which(df.pv$genes %in% intersect(row.names(obs.p[which(obs.p[,i] < cutoff),]), true.upreg[[i]]) & df.pv$test.name == "limma"& df.pv$group == colnames(df.p)[i+2]), "TP"]<- 1
+    df.pv[which(df.pv$genes %in% intersect(row.names(perm.p[which(perm.p[,i] < cutoff),]), true.upreg[[i]]) & df.pv$test.name == "permutation"& df.pv$group == colnames(df.p)[i+2]), "TP"]<- 1
+    
+  }
+  df.pv[which(df.pv$genes %in% true.upreg[[1]] & df.pv$group == "group1"), "true.de"]<- 1
+  df.pv[which(df.pv$genes %in% true.upreg[[2]] & df.pv$group == "group2"), "true.de"]<- 1
+  # table(true.upreg[[2]] %in% df.pv[df.pv$true.de == 1 & df.pv$group == "group2", "genes"])
+  
+  plot(ggplot(data=df.pv[df.pv$true.de==1 & df.pv$TP==0, ],
+              aes(y=pvalue, col=test.name,x = test.name))+
+         geom_boxplot()+
+         geom_jitter(position=position_jitter(0.3))+
+         facet_grid(~group)+geom_hline(yintercept =0.05, col="black")+
+         ylab(paste(adj,"pvalue (true DE)"))+
+         theme(legend.position= "none")+
+         xlab("")+
+         geom_jitter(data = df.pv[which(df.pv$TP==1), 1:6], 
+               aes(y =pvalue, x = test.name), 
+               position=position_jitter(0.3), color = "darkgreen", fill = "darkgreen"))
+  
+  plot(ggplot(data=df.pv[df.pv$true.de==1 & df.pv$TP==1, ],
+              aes(y=pvalue, col=test.name,
+                  x = test.name))+
+         geom_boxplot()+
+         geom_jitter(position=position_jitter(0.4))+
+         facet_grid(~group)+geom_hline(yintercept =1/perm.size, col="black")+
+         ylab(paste(adj,"pvalue (TP)"))+
+         theme(legend.position= "none")+
+         xlab(""))
+  
+  plot(ggplot(df.pv[df.pv$true.de==1, ],
+              aes(y=pvalue, col=test.name,x = test.name))+
+         geom_violin(draw_quantiles = c(0.5), scale="count")+facet_grid(~group)+geom_hline(yintercept =0.05, col="black"))
+  
   
   for (i in 1:ncol(obs.p)){
     
     limma_upreg_genes =  row.names(obs.p[which(obs.p[,i]<0.05),])
     perm_upreg_genes =  row.names(perm.p[which(perm.p[,i]<0.05),])
     
-    plot(perm.p[, i],obs.p[, i],     
-         lwd=0.1, pch=".", 
-         xlab =(paste(adj, "pvalue by permutation")), 
-         ylab=(paste(adj,"pvalue by limma")), 
-         main=(paste(colnames(obs.p)[i],"cells")))
-    abline(a = 0,b=1, col="blue", lwd = 1.5)
+    #plot(perm.p[, i],obs.p[, i],     
+    #     lwd=0.1, pch=".", 
+    #     xlab =(paste(adj, "pvalue by permutation")), 
+    #     ylab=(paste(adj,"pvalue by limma")), 
+    #     main=(paste(colnames(obs.p)[i],"cells")))
+    #abline(a = 0,b=1, col="blue", lwd = 1.5)
     
     
-    plot(perm.p[, i],obs.p[, i],
-         pch="*", ylim = c(0,0.05), xlim = c(0,0.05),
-         xlab =(paste(adj,"pvalue by permutation")), 
-         ylab=(paste(adj,"pvalue by limma ")), col = "orange", 
-         main=(paste("significant genes for",colnames(obs.p)[i],"cells")))
-    abline(a = 0,b=1, col="blue", lwd = 1.5)
+    #plot(perm.p[, i],obs.p[, i],
+    #     pch="*", ylim = c(0,0.05), xlim = c(0,0.05),
+    #     xlab =(paste(adj,"pvalue by permutation")), 
+    #     ylab=(paste(adj,"pvalue by limma ")), col = "orange", 
+    #     main=(paste("significant genes for",colnames(obs.p)[i],"cells")))
+    #abline(a = 0,b=1, col="blue", lwd = 1.5)
     
+    #boxplot(perm.p[match( true.upreg[[i]], row.names(perm.p)), ],
+    #        data = perm.p, 
+    #        main=(paste("up-regulated genes for",colnames(perm.p)[i],"cells by permutation")),
+    #        names = colnames(obs.p))
+    #abline(h=0.05, lty=2, col = "red", lwd = 2)
+    #boxplot(obs.p[match( true.upreg[[i]], row.names(obs.p)), ],
+    ##        data = obs.p, 
+    #        main=(paste("up-regulated genes for",colnames(perm.p)[i],"cells by limma")),
+    #        names = colnames(obs.p))
+    #abline(h=0.05, lty=2, col = "red", lwd = 2)
+
+
     if (length(perm_upreg_genes)>0){
       # plots for observation
       lst.obs<- list("a" = obs.p[match(limma_upreg_genes, row.names(obs.p)), 1],
@@ -120,16 +184,7 @@ computeSummary3<- function(obs.p, perm.p, adj, true.upreg, cell_num, main.descri
                       #"e"=perm.p[match(perm_upreg_genes, row.names(perm.p)),5 ],
                       #"f"=perm.p[match(perm_upreg_genes, row.names(perm.p)),6 ]
                       )
-      boxplot(perm.p[match(perm_upreg_genes, row.names(perm.p)), ],
-              data = perm.p, 
-              main=(paste("up-regulated genes for",colnames(perm.p)[i],"cells by permutation")),
-              names = colnames(obs.p))
-      abline(h=0.05, lty=2, col = "red", lwd = 2)
-      boxplot(obs.p[match(limma_upreg_genes, row.names(obs.p)), ],
-              data = obs.p, 
-              main=(paste("up-regulated genes for",colnames(perm.p)[i],"cells by limma")),
-              names = colnames(obs.p))
-      abline(h=0.05, lty=2, col = "red", lwd = 2)
+     
       
       stripchart(lst.perm,ylab =(paste(adj,"pvalue by permutation")), 
                  data=perm.p,method = "jitter",jitter=0.2,

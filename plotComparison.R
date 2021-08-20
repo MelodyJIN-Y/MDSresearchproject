@@ -11,7 +11,7 @@ plotComparison<-function(sim, perm.size, seed.n, result, plotMA= TRUE,
                               yes=1, no=0))
   resp<- list(resp.g1, resp.g2)
   auc.values<- rep(NA, ncol(result$obs.t.pval)*2)
-  pdf(paste("seed",seed.number.cp[m],"pdf", sep="."))
+  pdf(paste("seed",seed.n ,"pdf", sep="."))
   if (plotROC){
   for( i in 1:length(lst)){
     
