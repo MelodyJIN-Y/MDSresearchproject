@@ -1,0 +1,129 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+library(Seurat)
+library(dplyr)
+library(SingleCellExperiment)
+library(scater)
+library(splatter)
+library(reshape2)
+library(ggplot2)
+library(pROC)
+library(ggforce) 
+library(org.Hs.eg.db)
+
+pbmc.data<- readRDS("pbmc_pooled_sex.Rds")
+cm<- pbmc.data@assays$RNA@counts
+inds<- as.vector(names(table(pbmc.data$individual)))
+z=0
+#subset_ind<- c("685_686", "689_690","691_692")
+
+all.ind <- data.frame(individual = pbmc.data$individual)
+all.ind$libsize <- 0
+all.ind$pz = 0
+all.ind$numgenes<- 0
+all.ind$individual<- factor(all.ind$individual)
+row.names(all.ind)<- colnames(pbmc.data)
+
+for (i in inds){
+  curr_cm <- pbmc.data[, pbmc.data$individual ==i ]@assays$RNA@counts
+  all.ind[all.ind$individual == i, "libsize"] <- colSums(curr_cm)
+  all.ind[all.ind$individual == i, "pz"] <-colMeans(curr_cm==0)
+  all.ind[all.ind$individual == i, "numgenes"] <- colSums(curr_cm!=0)
+}
+#cm<- pbmc.data[, pbmc.data$individual %in% subset_ind ]@assays$RNA@counts
+cm<- pbmc.data@assays$RNA@counts
+dim(cm) # 32738  3402 (1789+1613) $32738  4907
+
+
+
+ggplot(data= all.ind, aes(x = libsize, col = individual, group = individual))+ 
+  geom_density(show.legend = FALSE)+facet_wrap(~all.ind$individual, nrow=4)+
+  ggtitle("Distribution of library sizes")+xlab("")
+
+ggplot(data= all.ind, aes(x = pz, col = individual, group = individual))+ 
+  geom_density(show.legend = FALSE)+facet_wrap(~all.ind$individual, nrow=4)+
+  ggtitle("Distribution of proportion of zeroes per cell")+xlab("")
+
+ggplot(data= all.ind, aes(x = numgenes, col =individual , group = individual))+ 
+  geom_density(show.legend = FALSE)+facet_wrap(~all.ind$individual, nrow=4)+
+  ggtitle("Distribution of detected genes per cell")+xlab("number of detected genes")+ xlab("")
+
+
+pbmc <- CreateSeuratObject(counts = cm,min.features = 500, min.cells = 5)
+
+cm<-pbmc@assays$RNA@counts
+#ann.all<- readRDS("allpbmc.Rds")
+ann <- AnnotationDbi:::select(org.Hs.eg.db,keys=rownames(pbmc),
+                              columns=c("SYMBOL","ENTREZID","GENENAME"),
+                              keytype = "SYMBOL")
+m <- match(rownames(cm),ann$SYMBOL)
+ann <- ann[m,]
+
+numzero.genes <- rowSums(cm==0)
+keep.genes <- numzero.genes < (ncol(cm)-10)
+all.keep <- cm[keep.genes,]
+ann.keep.all <- ann[keep.genes,]
+cm.processed<- all.keep
+
+
+```
+
+
+```{r}
+
+pbmc <- SCTransform(pbmc, verbose = FALSE)
+pbmc <- ScaleData(pbmc, verbose = FALSE)
+pbmc <- RunPCA(pbmc, npcs = 50, verbose = FALSE)
+ElbowPlot(pbmc,ndims=50)
+```
+
+```{r}
+
+pbmc <- FindNeighbors(pbmc, dims = 1:30)
+pbmc <- FindClusters(pbmc, resolution = c(0.8,0.9, 1, 1.1, 1.2, 1.3, 1.4))
+table(Idents(pbmc))
+table(pbmc$SCT_snn_res.1.4)
+library(clustree)
+clustree(pbmc, prefix = "SCT_snn_res.")
+```
+
+```{r}
+set.seed(10)
+pbmc <- RunTSNE(pbmc, reduction = "pca", dims = 1:30)
+
+
+#pbmc_new <- RenameIdents(object = pbmc, 
+#                               "0" = "CD4+ KLRB1- T cell ",
+#                               "1" = "CD4+ KLRB1+ T cell ",
+#                               "2" = "CD8+ GNLY+ NKG7+ T cell",
+#                               "3" = "CD8+ LTB+ T cell",
+#                               "4" = "XCL1- NK",
+#                               "5" = "CD8+ T cells",
+#                               "6" = "TCL1A+ FCER2+ B cell",
+#                               "7" = "Monocyte CD14+ ",
+#                               "8" = "CD8+ S100B+ T cell ")
+Idents(pbmc)<- pbmc.data[,colnames(pbmc)]$predicted.celltype.l1
+table(pbmc.data[,colnames(pbmc)]$predicted.celltype.l1)
+table(Idents(pbmc))
+DimPlot(pbmc, reduction = "tsne",label=TRUE,label.size = 6,repel = TRUE)
+```
+
+
+
+
+Select one cell type from one individual 
+```{r}
+selected_cells <- colnames(cm.processed[,pbmc.data[,colnames(cm.processed)]$predicted.celltype.l1 =="CD4 T"])
+cm.processed.r<- cm.processed[, match(selected_cells, colnames(cm.processed))]
+metadata <- data.frame(cell_type = pbmc.data[row.names(cm.processed.r),colnames(cm.processed.r)]$predicted.celltype.l1,
+                       ind = '689_690')
+
+#sce <- SingleCellExperiment(assays = as.matrix(cm.processed.r),
+#                            colData=metadata)
+
+sce <- SingleCellExperiment(list(counts=as.matrix(cm.processed.r)),colData=metadata)
+```
+
