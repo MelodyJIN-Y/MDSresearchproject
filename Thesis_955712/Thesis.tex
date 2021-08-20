@@ -19,39 +19,37 @@
 %
 
 % Include any extra LaTeX packages required
-\usepackage[square, numbers, comma, sort&compress]{natbib}  % Use the "Natbib" style for the references in the Bibliography
+\usepackage[square, numbers, comma, sort & compress]{natbib}  % Use the "Natbib" style for the references in the Bibliography
 \usepackage{verbatim}  % Needed for the "comment" environment to make LaTeX comments
 \usepackage{vector}  % Allows "\bvec{}" and "\buvec{}" for "blackboard" style bold vectors in maths
 \hypersetup{urlcolor=blue, colorlinks=true}  % Colours hyperlinks in blue, but this can be distracting if there are many links.
 
 %% ----------------------------------------------------------------
 \begin{document}
-\frontmatter      % Begin Roman style (i, ii, iii, iv...) page numbering
-
-%
-\UNIVERSITY{{THE UNIVERSITY OF MELBOURNE }}    
-%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Update your department and school here:
-\department{{Department of Mad Science}}
-\school{{Melbourne School of Awesome}}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Set up the Title Page
-% Change your thesis title and your information here
-\title  {Thesis Title}
-\authors  {\texorpdfstring
-            {\href{your web site or email address}{Author Name\\ \small ORCID: }}
-            {Author Name}
-            }
-\addresses  {\groupname\\\deptname\\\univname}  % Do not change this here, instead these must be set in the "Thesis.cls" file, please look through it instead
-\date       {\today}
-\subject    {}
-\keywords   {}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+	\frontmatter      % Begin Roman style (i, ii, iii, iv...) page numbering
+	
+	\UNIVERSITY{{THE UNIVERSITY OF MELBOURNE }}    
+	%
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Update your department and school here:
+	\department{{}}
+	\school{{School of Mathematics and Statistics}}
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
+	%
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	% Set up the Title Page
+	% Change your thesis title and your information here
+	\title  {Permutation Test in Marker gene analysis}
+	\authors  {\texorpdfstring
+		{\href{xinyij4@student.unimelb.edu.au}{Xinyi Jin \\ \small Student number: 955712 }}
+		{Xinyi Jin}
+	}
+	\addresses  {\groupname\\\deptname\\\univname}  % Do not change this here, instead these must be set in the "Thesis.cls" file, please look through it instead
+	\date       {\today}
+	\subject    {}
+	\keywords   {}
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \maketitle
 %% ----------------------------------------------------------------
 
@@ -118,20 +116,20 @@
 \listofconstants{lrcl}  % Include a list of Physical Constants (a four column table)
 {
 % Constant Name & Symbol & = & Constant Value (with units) \\
-Speed of Light & $c$ & $=$ & $2.997\ 924\ 58\times10^{8}\ \mbox{ms}^{-\mbox{s}}$ (exact)\\
+Speed of Light \& $c$ \& $=$ \& $2.997\ 924\ 58\times10^{8}\ \mbox{ms}^{-\mbox{s}}$ (exact)\\
 
 }
 
 %% ----------------------------------------------------------------
 \clearpage  %Start a new page
-\lhead{\emph{Symbols}}  % Set the left side page header to "Symbols"
+\lhead{\emph{Introduction}}  % Set the left side page header to "Symbols"
 \listofnomenclature{lll}  % Include a list of Symbols (a three column table)
 {
 % symbol & name & unit \\
-$a$ & distance & m \\
-$P$ & power & W (Js$^{-1}$) \\
-& & \\ % Gap to separate the Roman symbols from the Greek
-$\omega$ & angular frequency & rads$^{-1}$ \\
+$a$ \& distance \& m \\
+$P$ \& power \& W (Js$^{-1}$) \\
+\& \& \\ % Gap to separate the Roman symbols from the Greek
+$\omega$ \& angular frequency \& rads$^{-1}$ \\
 }
 %% ----------------------------------------------------------------
 % End of the pre-able, contents and lists of things
@@ -145,36 +143,8 @@ $\omega$ & angular frequency & rads$^{-1}$ \\
 % Just uncomment the lines as you write the chapters
 
 \input{Chapters/Chapter1} % Introduction
-Single cell sequencing has increasing popularity in recent years. It is a technology that provides gene counts for each cell present in the sequencing. As the special count data ,  
-The analysis of single cell RNA seq has its own workflows and challenges. A typical workflow starts from pre-processing steps of the raw count matrix. Poor quality cells and genes are filtered in the quality control steps. 
-Single-cell data has technical noise and is therefore noisy. 
 
-Genes and cells that pass the quality control can be used for downstream analysis. 
-One common cell-level analysis is to find cell types in the data. Cells are often clustered based on similarities and different methods are used to annotate the clusters. 
-The computed clusters are useful for further cell type annotations.
-
-There are two main approaches to annotate the computed clusters. 
-approach is to identify marker genes that are representative for each cluster, and further analysis with marker gene sets will reveal more insights about the cell identity. 
-Although the automatic cluster annotation methods exist, manual annotation remains its significance when the experiment is performed under different conditions and the reference cells are not applicable. 
-As the number of marker genes tend to be large, the obtained marker genes are typically examined as a group. The group of marker genes is tested against many well-known gene sets to identify over-represented biological pathways or processes involved in. The biological pathways will aid the understanding of existing cell identities.  
- 
-Marker analysis 
-Manual cell type annotation involves finding marker genes that are highly regulated for the cluster of interest. Marker genes are identified by performing differential expression testing between the cells in the interested cluster versus all the rest cells. A considerable amount of literature has been published on marker-gene identification. There are various statistical tests used in DE, ranging from basic statics such as t-statistic to . 
-The literature comparing thirty-six DE methods has highlighted that current tools have significant variations in terms of the number of detected marker genes and their significances.  Tools developed originally for bulk RNA sequence, such as Limma, edgeR are argued to be competitive to those designed specific for single cell RNA sequencing. 
-Gene set testing 
-Different methods exist in the literature regarding gene set testing. 
-
-Permutation-based methods  
-As argued in , commonly used DE tools tend to give under-estimated p-vlaue estimates, resulting in an overestimation in the number of up-regulated genes.  
-Single cell RNA seq usually contains large amount of cells in different cell identities, and permutation-based methods have the potential to approximate empirical distribution without specific distribution assumptions. P-value for each gene is expected to be more accurate with permutation testing, and therefore control the false positive rate in marker genes. 
-
-Similarly for gene set testing, what many available tools tend to show is the underestimated p values for the genes. 
-There is a relatively small body of literature that is concerned with applying nonparametric methods to find marker genes [] []. However, the time and design complexity for those methods possibly limits the practical applications. 
-
-The key purpose of this project is to develop a permutation-based framework that performs marker identification to discover underlying cell types in the data. 
-To make permutation-based framework work efficiently and effectively, different test statistics will be explored for marker gene analysis and gene set testing. It is aimed to provide more accurate p-value estimates with the consideration of cell-to-cell and sample-to-sample variabilities in a computationally efficient framework. The final permutation framework will be implemented in the speckle R package. 
-
-%\input{Chapters/Chapter2} % Background Theory 
+\input{Chapters/Chapter2} % Background Theory 
 
 %\input{Chapters/Chapter3} % Experimental Setup
 
