@@ -69,13 +69,15 @@ pPerm<- function(cm, groups, perm.size = 1000, statistic = "os.t",  lfc.cutoff=0
       
     }else if (statistic == "ts.treatt"){
       # two-sided treat t statistic 
-      treat.result<- treat(fit.cont.eb, lfc=lfc.cutoff, trend=TRUE, robust = TRUE)
+      treat.result<- limma::treat(fit.cont.eb, lfc=lfc.cutoff, trend=TRUE, robust = TRUE)
       perm.stat<- treat.result$t
       
     }else if (statistic == "lfc.p"){
       # logFc * (1-p)
       
-      perm.stat <- fit.cont$coef*(1-pt(fit.cont$coef/ fit.cont$stdev.unscaled / fit.cont$sigma, 
+      #perm.stat <- fit.cont$coef*(1-pt(fit.cont$coef/ fit.cont$stdev.unscaled / fit.cont$sigma, 
+      #                                 df = fit.cont$df.residual,lower.tail=FALSE))
+      perm.stat <- 0.8*fit.cont$coef+0.2*(1-pt(fit.cont$coef/ fit.cont$stdev.unscaled / fit.cont$sigma, 
                                        df = fit.cont$df.residual,lower.tail=FALSE))
       
       
@@ -83,20 +85,20 @@ pPerm<- function(cm, groups, perm.size = 1000, statistic = "os.t",  lfc.cutoff=0
       # logFc * (1-p)
       #perm.stat <- 0.6*fit.cont$coef+ 0.4*(1-pt(fit.cont$coef/ fit.cont$stdev.unscaled / fit.cont$sigma, 
       #                                 df = fit.cont$df.residual,lower.tail=FALSE))
-      perm.stat <- fit.cont$coef*abs(table.g1$AveExpr)
+      perm.stat <- fit.cont$coef*abs(table.g1$AveExpr)*(1-pt(fit.cont$coef/ fit.cont$stdev.unscaled / fit.cont$sigma, 
+                                                            df = fit.cont$df.residual,lower.tail=FALSE))
     }else if (statistic == "lfc.treatp"){
       # logFc * (1-p)
       # one-sided treat t statistic 
       treat.t.stat<- (fit.cont$coef - lfc.cutoff)/ fit.cont$stdev.unscaled / fit.cont$sigma
       # p value for one-sided treat t statistic 
       treat.t.pval<-pt(treat.t.stat, df=fit.cont$df.residual, lower.tail=FALSE)
-      
       perm.stat <- fit.cont$coef*(1-treat.t.pval)
       
     }else{
       print(paste("specified statistic", statistic, " not supported"))
     }
-    
+    enrichmentStat <- wmwTest(perm.stat, geneSets, valType = "U", simplify = F)
     t.perm.array[,,i]<- perm.stat
     
   }
