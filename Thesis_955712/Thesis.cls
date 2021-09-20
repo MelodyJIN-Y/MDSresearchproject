@@ -214,7 +214,7 @@
       %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
       % Comment \includegraphics line out!!
       %
-      {\includegraphics[width=0.3\textwidth]{Figures/unimelb_logo.eps} \par}
+     % {\includegraphics[width=0.3\textwidth]{Figures/unimelb_logo.eps} \par}
       %
       %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
       %
@@ -226,10 +226,10 @@
       {\LARGE \authornames \par}
       \vfill
       {\large A thesis submitted in total fulfillment for the \par}
-      {\large degree of Doctor of Philosophy \par}
+      {\large degree of Master of Data Science \par}
       \bigskip
       \bigskip
-      {\large in the \par}
+%      {\large in the \par}
       {\large \deptname \par}
       {\large \schoolname \par}
       {\large\textbf{\UNIVNAME}\par}
@@ -270,7 +270,7 @@
     {\normalsize \deptname \par}
     {\normalsize \schoolname \par}
     \bigskip
-    {\normalsize Doctor of Philosophy\par}
+    {\normalsize Master of Data Science \par}
     \bigskip
     {\normalsize\bf \@title \par}
     \medskip

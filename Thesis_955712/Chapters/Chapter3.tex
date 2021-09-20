@@ -1,0 +1,32 @@
+\chapter{Comparision}
+\section{Splatter simulation}
+Splatter is a competitve scRNA-seq simulator. 
+There are diverse parameter sets that control different properties of the simulation, and the parameters of interest is related to DEs. 
+Compare the simulation with the real data. 
+To compare the simulated data with real data, two cell types are extracted from one individual separately. Splatter is used to learn a set of parameters for each cell type. 
+Limma is applied to estimate the DE proportions for the selected cell types, and the calculated relative proportions of up and down regulated genes is manually set for simulation . 
+The plot $3.1$ summaries the comparison between simulated data and the original data. It can be seen that the library size is estimated well . The cell type NK has a relatively low cell proportion in the original dataset, splatter may have thr risk . 
+\section{Effect of Strength of DEs }
+This section will focus on the effect of 
+A closer . To make the simluation simple and ideal, additional changes are made to the simulated true DEs. It's expected that the true DE set for each cell type is unique, and the shared DEs acoess different groups are removed. Besides, it is noticed that some simulated true DEs are associated with negative logFC, in particular with small de.facloc and large standard deviation. Such true DEs are not realistic in practice and are filtered. 
+The mean and variance of the multipliers to the DE genes have a joint effect on the difficulty level of marker identification. 
+To keep the simulation simple for exploration, one largest cell type of one individual is extrated anf learned by Splatter. The experiment simulates two groups, each with 2\% DE genes. 5,000 genes and 1,000 cells
+\section{Effect of different statistics}
+%\subsection{Dataset }
+Five different statistics are . 
+t-statistic and moderated t-statistic are widely used for identifying marker genes in scRNA-seq. 
+One additional statistic, W, is tested . 
+The p-value of the t-statistic will be extremely small, has profound impact of the $W$ statistic 
+\subsection{compare t and moderated t statistic}
+\subsection{Parametric t statistic}
+The null hypothesis of a t-test is that the logFC of a gene is equal to zero. There is a parametric version of a t-test which adds a threshold to the ordinary t-test. The parametric t-test has practical significance if  are particularly of interest. 
+\subsection{ statistic}
+Permutation tests do not have any assumption on the distrbutation of the test statistic, which makes it possible to extend to distinct statistics. 
+This novel statistic, however, does not addtional improvements compared to the ordinary one-sided t-statistic. The reasons could be explained by the tolerance and of permutation test. The defined statistic shows a monotone . It is expected that true DEs will have large logFC and small p-values, and the product of logFC and $(1-p-value)$ will show a monotome behaviour as the ordinary t-statistic. The ranking of detected DEs by the W statistic will be generally the same as the ordinary t-statistic. \\
+The W statistic serves as an example to illustrate the power of permutation tests. 
+\section{Effect of permutation times}
+The number of permutations $N$ sets a theoretical limit to the minimum possible raw p-value that can be achieved. When the permutation times is highly conserved, multiple testing adjustment may have the risk to . \\
+The experiment is taken 
+When all the raw p values are . 
+\section{Effect of cell number proportions}
+\subsection{}

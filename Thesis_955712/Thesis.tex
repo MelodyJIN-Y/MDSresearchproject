@@ -25,6 +25,8 @@
 \hypersetup{urlcolor=blue, colorlinks=true}  % Colours hyperlinks in blue, but this can be distracting if there are many links.
 
 %% ----------------------------------------------------------------
+\newcommand \modt {$t_{\mathrm{mod}}$}
+\newcommand \treatt {$t_{\mathrm{treat}}$}
 \begin{document}
 	\frontmatter      % Begin Roman style (i, ii, iii, iv...) page numbering
 	
@@ -126,10 +128,15 @@ Speed of Light \& $c$ \& $=$ \& $2.997\ 924\ 58\times10^{8}\ \mbox{ms}^{-\mbox{s
 \listofnomenclature{lll}  % Include a list of Symbols (a three column table)
 {
 % symbol & name & unit \\
-$a$ \& distance \& m \\
-$P$ \& power \& W (Js$^{-1}$) \\
-\& \& \\ % Gap to separate the Roman symbols from the Greek
-$\omega$ \& angular frequency \& rads$^{-1}$ \\
+$t$ & t statistic & \\
+\modt & moderated t statistic & \\
+\treatt & treat t statistic & \\
+$\log \mathrm{FC}$ & log fold-change & $\beta$ \\
+$N$ & number of permutations & \\
+% Gap to separate the Roman symbols from the Greek
+$W$ & a defined statistic, $\log \mathrm{FC} \times (1-p) $ &  \\
+$p$ &  raw p-value &  \\
+$p_{\mathrm{adj}}$ &  adjusted p-value &  \\
 }
 %% ----------------------------------------------------------------
 % End of the pre-able, contents and lists of things
