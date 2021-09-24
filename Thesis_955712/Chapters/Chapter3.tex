@@ -19,7 +19,8 @@ One additional statistic, W, is tested .
 The p-value of the t-statistic will be extremely small, has profound impact of the $W$ statistic 
 \subsection{compare t and moderated t statistic}
 \subsection{Parametric t statistic}
-The null hypothesis of a t-test is that the logFC of a gene is equal to zero. There is a parametric version of a t-test which adds a threshold to the ordinary t-test. The parametric t-test has practical significance if  are particularly of interest. 
+The null hypothesis of a t-test is that the logFC of a gene is equal to zero. There is a parametric version of a t-test which adds a threshold to the ordinary t-test. The parametric t-test has practical significance if are particularly of interest. \\
+With the same cell proportion candidates setup as in, Figure XX comparies the one-sided treat t-statistic of limma and permutation. As the change in null hypothesis, the definition of the true DEs are changed as well, i.e. genes with p-value $< 0.05 $ and logFC$>$ threshold are identified 
 \subsection{ statistic}
 Permutation tests do not have any assumption on the distrbutation of the test statistic, which makes it possible to extend to distinct statistics. 
 This novel statistic, however, does not addtional improvements compared to the ordinary one-sided t-statistic. The reasons could be explained by the tolerance and of permutation test. The defined statistic shows a monotone . It is expected that true DEs will have large logFC and small p-values, and the product of logFC and $(1-p-value)$ will show a monotome behaviour as the ordinary t-statistic. The ranking of detected DEs by the W statistic will be generally the same as the ordinary t-statistic. \\
@@ -29,4 +30,7 @@ The number of permutations $N$ sets a theoretical limit to the minimum possible 
 The experiment is taken 
 When all the raw p values are . 
 \section{Effect of cell number proportions}
+The relative proportion of different cell types . One particular advantage of single cell sequencing is the reveal of novel cell types. ,  is often the case that the underlying cell types account for relative , in particular the case with rare cell types. 
+The result shows that the relative cell number proportion plays an important role in the perfomance of both methods. 
+To investigate the impact of cell proportions, one simulation of two groups with the same DE distrbution but different relative group probabilities is examined. There are seven probability pairs tested, namely, 1\%vs99\%, 5\%vs95\%, 10\%vs90\%, 20\%vs80\%, 30\%vs70\%, 40\%vs60\% and 50\%vs50\%. As the issue with multiple testing adjustment, 10,000 permutations are performanced for the 1\%vs99\% pair and 4,000 permutations are conducted for the rest candidate pairs.  The procedure is repeated for fifty times and the result is shown in Figure . 
 \subsection{}
