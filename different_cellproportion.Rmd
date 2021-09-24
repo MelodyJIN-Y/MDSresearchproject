@@ -15,6 +15,10 @@ library(limma)
 library(tictoc)
 library(foreach)
 library(scales)
+library(ggplot2)
+library(ggpubr)
+library(ggExtra)
+library(cowplot)
 
 pbmc.data<- readRDS("pbmc_pooled_sex.Rds")
 cm<- pbmc.data@assays$RNA@counts
@@ -180,14 +184,6 @@ adj.p$category<-factor(adj.p$category, levels = c("limma os.t",
                                                   "limma os.treatt",
                                                   "permutation os.treatt", "permutation lfc.p"))
 
-
-library(ggplot2)
-library(reshape2)
-library(ggpubr)
-library(ggExtra)
-library(cowplot)
-library(scales)
-
 sensitivity.chart<-ggplot(data = adj.p, 
                           aes(x = group, y = sensitivity,fill = category))+
   geom_bar(width=0.65, stat="identity",color="black", position=position_dodge())+
@@ -258,26 +254,31 @@ groups_lst<- list(c(0.01, 0.99),
                   c(0.4, 0.6),
                   c(0.5, 0.5)
                   )
-#groups_lst<- list(c(0.01, 0.99), c(0.1, 0.9)
- #                 )
-#perm.size = 4000
-set.seed(56892)
-rep.times<-20
+
+# 1:20 runs -> 20run_7cp_g22098
+# set.seed(22098)
+# rep.times<-20
+# rep.seed <- sample(x = seed.number.cp[rep]:seed.number.cp[rep]+8900, 
+#                         size = length(groups_lst), replace = FALSE)
+# 20:50 runs -> 30run_7cp_g23098
+#set.seed(23098)
+#rep.times<-30
+#rep.seed <- sample(x = seed.number.cp[rep]:seed.number.cp[rep]+93, 
+#                         size = length(groups_lst), replace = FALSE)
+set.seed(23098)
+rep.times<-30
 seed.number.cp <- sample(x = 100:10000, size = rep.times, replace = FALSE)
 
-# rm(adj.p, adj.df, raw.p, raw.df)
+# rm(adj.p, adj.df)
 tic.clearlog()
 tic(paste(rep.times, "repeated rounds total time"))
 for (rep in 1: rep.times){
   set.seed(seed.number.cp[rep])
-  rep.seed <- sample(x = seed.number.cp[rep]:seed.number.cp[rep]+8900, 
+  rep.seed <- sample(x = seed.number.cp[rep]:seed.number.cp[rep]+93, 
                          size = length(groups_lst), replace = FALSE)
   print(paste("repeated round", rep, "started"))
   tic(paste("repeated round", rep, "time"))
   for (cp in 1:length(groups_lst)){
-   
-    #rep.seed[cp]
-    #setwd("~/Desktop/Data Science Research Project/MDSresearchproject/different_cp_stat/global_seed_7654")
     sim <- splatSimulate(curr_params, method = "groups", nGenes = 5000,
                          batchCells = 1000, dropout.type = "none", out.prob = 0, 
                          de.prob = c(0.02, 0.02),de.downProb = c(0, 0),
@@ -294,7 +295,6 @@ for (rep in 1: rep.times){
     #plotPCA(sim, colour_by = "Group")+ggtitle("simulated CD4T cells")+ 
     #  theme(plot.title = element_text(size = 20, face = "bold"))
     
-    
     ############################################################################
     # QC 
     # remove lowly expressed genes 
@@ -306,7 +306,7 @@ for (rep in 1: rep.times){
     sim<- sim[keep.genes, ]
     
     # check the logFC for each gene 
-    obs_res<- computeObs(counts(sim), factor(sim$Group),statistic= "os.t")
+    obs_res<- computeObs(counts(sim), factor(sim$Group), statistic= "os.t")
     DE.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
     DE.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
     #summary(obs_res$summary.tb[DE.g1, "logFC.g1"])
@@ -328,38 +328,41 @@ for (rep in 1: rep.times){
     # run permutation for all stats
     n.cores=parallel::detectCores()-8
     if (cp == 1){
-      perm.size = 8000
+      perm.size = 10000
     }else{
       perm.size = 4000
     }
-    perm.array.lst<- pPerm.stat(counts(sim), sim$Group, perm.size=perm.size, n.cores=n.cores)
+    #perm.array.lst<- pPerm.stat(counts(sim), sim$Group, 
+    #                            perm.size=perm.size, n.cores=n.cores)
     
     # generate perm & observation p-values for each stat 
-    os.t.res<- runComparison.stat(sim, perm.size, statistic = "os.t", 
-                                  sim_perm_arrays = perm.array.lst$os.t.stat, 
-                                  n.cores = n.cores)
-    os.modt.res<- runComparison.stat(sim, perm.size, statistic = "os.modt", 
-                                  sim_perm_arrays = perm.array.lst$os.modt.stat, 
-                                  n.cores = n.cores)
-    os.treatt.res<- runComparison.stat(sim, perm.size, statistic = "os.treatt", 
-                                  sim_perm_arrays = perm.array.lst$os.treatt.stat, 
-                                  n.cores = n.cores)
-    ts.modt.res<- runComparison.stat(sim, perm.size, statistic = "ts.modt", 
-                                  sim_perm_arrays = perm.array.lst$ts.modt.stat,
-                                  n.cores = n.cores)
-    lfc.p.res<-runComparison.stat(sim, perm.size, statistic = "lfc.p", 
-                                  sim_perm_arrays = perm.array.lst$lfc.p.stat, 
-                                  n.cores = n.cores)
-    #os.t.res.1<- runComparison(sim, perm.size, statistic = "os.t", n.cores = n.cores)
+    #os.t.res<- runComparison.stat(sim, perm.size, statistic = "os.t", 
+    #                              sim_perm_arrays = perm.array.lst$os.t.stat, 
+    #                              n.cores = n.cores)
+    #os.modt.res<- runComparison.stat(sim, perm.size, statistic = "os.modt", 
+    #                              sim_perm_arrays = perm.array.lst$os.modt.stat, 
+    #                              n.cores = n.cores)
+    #os.treatt.res<- runComparison.stat(sim, perm.size, statistic = "os.treatt", 
+    #                              sim_perm_arrays = perm.array.lst$os.treatt.stat, 
+    #                              n.cores = n.cores)
+    #ts.modt.res<- runComparison.stat(sim, perm.size, statistic = "ts.modt", 
+    #                              sim_perm_arrays = perm.array.lst$ts.modt.stat,
+    #                              n.cores = n.cores)
+    #lfc.p.res<-runComparison.stat(sim, perm.size, statistic = "lfc.p", 
+    #                              sim_perm_arrays = perm.array.lst$lfc.p.stat, 
+    #                              n.cores = n.cores)
     # save the result for each stat 
-    saveRDS(os.t.res, paste(prefix, "os.t.Rds", sep="."))
-    saveRDS(os.treatt.res, paste(prefix, "os.treatt.Rds", sep="."))
-    saveRDS(lfc.p.res, paste(prefix, "lfc.p.Rds", sep="."))
-    saveRDS(ts.modt.res, paste(prefix, "ts.modt.Rds", sep="."))
-    saveRDS(os.modt.res, paste(prefix, "os.modt.Rds", sep="."))
-    #os.t.res<-readRDS(paste(cp, "os.t.res.Rds", collapse="."))
-    #os.treatt.res<-readRDS(paste(cp, "os.treatt.Rds", collapse="."))
-    #lfc.p.res<-readRDS(paste(cp, "lfc.p.Rds", collapse="."))
+    #saveRDS(os.t.res, paste(prefix, "os.t.Rds", sep="."))
+    #saveRDS(os.treatt.res, paste(prefix, "os.treatt.Rds", sep="."))
+    #saveRDS(lfc.p.res, paste(prefix, "lfc.p.Rds", sep="."))
+    #saveRDS(ts.modt.res, paste(prefix, "ts.modt.Rds", sep="."))
+    #saveRDS(os.modt.res, paste(prefix, "os.modt.Rds", sep="."))
+    setwd("~/Desktop/Data Science Research Project/MDSresearchproject/50run_7cp/30run_7cp_g23098")
+    os.t.res<- readRDS(paste(prefix, "os.t.Rds", sep="."))
+    os.treatt.res<- readRDS(paste(prefix, "os.treatt.Rds", sep="."))
+    lfc.p.res<- readRDS( paste(prefix, "lfc.p.Rds", sep="."))
+    ts.modt.res<- readRDS(paste(prefix, "ts.modt.Rds", sep="."))
+    os.modt.res<- readRDS(paste(prefix, "os.modt.Rds", sep="."))
     
     ############################################################################
     # creat the result table 
@@ -369,37 +372,32 @@ for (rep in 1: rep.times){
       cols.n<- c("group","cell.type","num.cells", "test.name", "num.true.upreg","num.upreg",
                  "TP", "precision", "sensitivity","F1","overlap","TP.overlap","cutoff","perm.size",
                  "seed.number","AUC","statistic")
-      raw.p<- setNames(data.frame(matrix(ncol = length(cols.n), nrow = 0)), cols.n)
       adj.p<- setNames(data.frame(matrix(ncol = length(cols.n), nrow = 0)),cols.n)
     }
     for (a in 1:length(stat.lst)){
       auc.values <- plotComparison(sim, perm.size = perm.size, seed.n = rep.seed[cp], 
                                    result=res.lst[[a]])
-      if (stat.lst[a] == "ts.modt"){
-        raw.df<-computeSummary3simple(res.lst[[a]]$obs.pval, res.lst[[a]]$perm.pval,
-                              adj = "",
-                              true.upreg = res.lst[[a]]$true.upreg, 
-                              cell_num = as.vector(table(sim$Group)), 
-                              main.describe = paste(as.character(table(sim$Group)),collapse="_"), 
-                              seed.number=rep.seed[cp],perm.size=perm.size, 
-                              logFC.df=obs_res$summary.tb[, c(1, 2)], 
-                              auc.values=auc.values, statistic = stat.lst[[a]])
-      
+      if (stat.lst[a] == "ts.modt" | stat.lst[a] == "os.treatt"){
+        logFC.df<- as.data.frame(cbind(res.lst[[a]]$result.table[[1]][, 2],
+                                             res.lst[[a]]$result.table[[2]][, 2]))
+        row.names(logFC.df)<-row.names(res.lst[[a]]$obs.stat)
+        colnames(logFC.df)<-c("logFC.g1","logFC.g2")
+      trueDE<-res.lst[[a]]$true.upreg
+        if(stat.lst[a] == "os.treatt"){
+          trueDE = list(intersect(row.names(logFC.df[logFC.df$logFC.g1 > 0.1, ]),
+                                  trueDE[[1]]), 
+                        intersect(row.names(logFC.df[logFC.df$logFC.g2 > 0.1, ]),
+                                  trueDE[[2]]))
+        }
       adj.df<-computeSummary3simple(res.lst[[a]]$obs.pval.adj, res.lst[[a]]$perm.pval.adj,
                               adj = "adjusted",
-                              true.upreg = res.lst[[a]]$true.upreg, 
+                              true.upreg = trueDE, 
                               cell_num=as.vector(table(sim$Group)), 
                               main.describe = paste(as.character(table(sim$Group)),collapse="_"), 
                               seed.number=rep.seed[cp],perm.size=perm.size,
-                              logFC.df=obs_res$summary.tb[, c(1, 2)], 
+                              logFC.df=logFC.df,
                               auc.values=auc.values, statistic = stat.lst[[a]])
-      }else{raw.df<-computeSummary3simple(res.lst[[a]]$obs.pval, res.lst[[a]]$perm.pval,
-                              adj = "",
-                              true.upreg = res.lst[[a]]$true.upreg, 
-                              cell_num = as.vector(table(sim$Group)), 
-                              main.describe = paste(as.character(table(sim$Group)),collapse="_"), 
-                              seed.number=rep.seed[cp],perm.size=perm.size, 
-                              auc.values=auc.values, statistic = stat.lst[[a]])
+      }else{
       
       adj.df<-computeSummary3simple(res.lst[[a]]$obs.pval.adj, res.lst[[a]]$perm.pval.adj,
                               adj = "adjusted",
@@ -410,7 +408,7 @@ for (rep in 1: rep.times){
                               auc.values=auc.values, statistic = stat.lst[[a]])}
       
       
-      raw.p<- rbind(raw.p, raw.df)
+      #raw.p<- rbind(raw.p, raw.df)
       adj.p<- rbind(adj.p, adj.df)
     }
     
@@ -420,7 +418,7 @@ for (rep in 1: rep.times){
 }
 toc(log = T)
 
-saveRDS(adj.p, "adj.p.Rds")
+saveRDS(adj.p, "V2_50r_adj.p.Rds")
 ```
 
 
@@ -449,95 +447,263 @@ gr<- unlist(groups_lst)*100
 cp.ft<-as.vector(rep(tapply(gr, as.character(gl(length(gr), 2, length(gr))),   
                                 FUN= paste, collapse='_'), 1))
 
-adj.p$cp<- rep(cp.ft,times=15,each = 4*5)
+adj.p$cp<- rep(cp.ft,times=50,each = 4*5)
 
 adj.p$cp<-factor(adj.p$cp, levels = c("1_99","5_95","10_90","20_80","30_70","40_60","50_50"))
-sensitivity<-ggplot(data = adj.p, 
-       aes(x = factor(category), y = sensitivity,fill = category))+
-  
-  #geom_bar(width=0.65, stat="identity",color="black", position=position_dodge())+
-  #geom_jitter(position=position_jitter(0.4))+
-  #geom_point(position=position_jitterdodge(0.6))+
-  #geom_dotplot(binaxis = "y", stackgroups = TRUE,  method = "histodot")+
-  #geom_point(position=position_jitterdodge(dodge.width=0.1)) +
-  geom_boxplot(size=0.2, position=position_dodge(1))+
-  geom_point(position=position_jitterdodge(jitter.width=3, jitter.height=0), 
-             size=0.4, color = "black", alpha=0.9)+
-  
-  facet_grid(cell.type~cp, scales='free_x', space='free_x')+
-  theme(axis.text.x = element_text(angle=90), 
-        legend.title=element_blank(),
-        axis.ticks.x=element_blank(), 
-        axis.text.x.bottom =element_blank(), 
-        axis.title.x=element_blank(),
-        panel.spacing = unit(0.5, "lines"), 
-        legend.position="top", #legend.text=element_text(),
-        #legend.spacing.x = unit(0.6, 'cm'),
-        legend.text=element_text(margin=margin(r=0.6,unit="cm"),size=18))+
-  guides(fill = guide_legend(ncol = 9))+
-  #xlab("")+
-  ylab("sensitivity")+ 
-  scale_y_continuous(limits=c(0, 1), oob = rescale_none)+
-  scale_fill_manual(values=c('lightsteelblue2','navajowhite2',
-                              "steelblue2","darkgoldenrod1",
-                              "royalblue1","coral","blue4","tomato3",
-                              "green4"))
-ggsave("sensitivity.pdf", width = 18, height=6)
-precision<-ggplot(data = adj.p, 
-       aes(x = factor(category), y = precision,fill = category))+
-  geom_boxplot(size=0.2, position=position_dodge(1))+
-  geom_point(position=position_jitterdodge(jitter.width=3, jitter.height=0), 
-             size=0.4, color = "black", alpha=0.9)+
-  
-  facet_grid(cell.type~cp, scales='free_x', space='free_x')+
-   theme(axis.text.x = element_text(angle=90), 
-        legend.title=element_blank(),
-        axis.ticks.x=element_blank(), 
-        axis.text.x.bottom =element_blank(), 
-        axis.title.x=element_blank(),
-        panel.spacing = unit(0.5, "lines"), 
-        legend.position="top", 
-        legend.text=element_text(margin=margin(r=0.6,unit="cm"),size=18))+
-  guides(fill = guide_legend(ncol = 9))+
-  #xlab("")+
-  ylab("precision")+ 
-  scale_y_continuous(limits=c(0, 1), oob = rescale_none)+
-  scale_fill_manual(values=c('lightsteelblue2','navajowhite2',
-                              "steelblue2","darkgoldenrod1",
-                              "royalblue1","coral","blue4","tomato3",
-                              "green4"))
-ggsave("precision.pdf", width = 18, height=6)
+ntstat_lst<-c("limma os.t", 
+                "permutation os.t",
+                "limma os.modt", 
+                "permutation os.modt",
+                "limma ts.modt", 
+                "permutation ts.modt",
+                "permutation lfc.p")
+adj.p.tt<- adj.p[adj.p$category%in% c("limma os.treatt", "permutation os.treatt"), ]
+adj.p.rest<- adj.p[adj.p$category %in% ntstat_lst, ]
 
-ggplot(data = adj.p, 
-       aes(x = factor(category), y = F1,fill = category))+
-  geom_boxplot(size=0.2, position=position_dodge(1))+
-  geom_point(position=position_jitterdodge(jitter.width=3, jitter.height=0), 
-             size=0.4, color = "black", alpha=0.9)+
+plot.result<-function(df, name, clrs){
   
-  facet_grid(cell.type~cp, scales='free_x', space='free_x')+
-  theme(axis.text.x = element_text(angle=90), 
-        legend.title=element_blank(),
-        axis.ticks.x=element_blank(), 
-        axis.text.x.bottom =element_blank(), 
-        axis.title.x=element_blank(),
-        panel.spacing = unit(0.5, "lines"), 
-        legend.position="top", legend.text=element_text(margin=margin(r=0.5,unit="cm"),size=14))+
-  guides(fill = guide_legend(ncol = 9))+
-  #xlab("")+
-  ylab("F1 score")+ 
-  scale_y_continuous(limits=c(0, 1), oob = rescale_none)+
-  scale_fill_manual(values=c('lightsteelblue2','navajowhite2',
-                              "steelblue2","darkgoldenrod1",
-                              "royalblue1","coral","blue4","tomato3",
-                              "green4"))
-ggsave("F1.pdf", width = 18, height=6)
+ 
+  sensitivity<-ggplot(data = df, 
+                      aes(x = factor(category), y = sensitivity,fill = category))+
+    geom_boxplot(size=0.2, position=position_dodge(1))+
+    geom_point(position=position_jitterdodge(jitter.width=3, jitter.height=0), 
+               size=0.4, color = "black", alpha=0.9)+
+    facet_grid(cell.type~cp, scales='free_x', space='free_x')+
+    theme(axis.text.x = element_text(angle=90), 
+          legend.title=element_blank(),
+          axis.ticks.x=element_blank(), 
+          axis.text.x.bottom =element_blank(), 
+          axis.title.x=element_blank(),
+          panel.spacing = unit(0.5, "lines"), 
+          legend.position="top", #legend.text=element_text(),
+          #legend.spacing.x = unit(0.6, 'cm'),
+          legend.text=element_text(margin=margin(r=0.6,unit="cm"),size=18))+
+    guides(fill = guide_legend(ncol = 9))+
+    #xlab("")+
+    ylab("sensitivity")+ 
+    scale_y_continuous(limits=c(0, 1), oob = rescale_none)+
+    scale_fill_manual(values=clrs)
+  precision<-ggplot(data = df, 
+                    aes(x = factor(category), y = precision,fill = category))+
+    geom_boxplot(size=0.2, position=position_dodge(1))+
+    geom_point(position=position_jitterdodge(jitter.width=3, jitter.height=0), 
+               size=0.4, color = "black", alpha=0.9)+
+    facet_grid(cell.type~cp, scales='free_x', space='free_x')+
+    theme(axis.text.x = element_text(angle=90), 
+          legend.title=element_blank(),
+          axis.ticks.x=element_blank(), 
+          axis.text.x.bottom =element_blank(), 
+          axis.title.x=element_blank(),
+          panel.spacing = unit(0.5, "lines"), 
+          legend.position="top", 
+          legend.text=element_text(margin=margin(r=0.6,unit="cm"),size=18))+
+    guides(fill = guide_legend(ncol = 9))+
+    #xlab("")+
+    ylab("precision")+ 
+    scale_y_continuous(limits=c(0, 1), oob = rescale_none)+
+    scale_fill_manual(values=clrs)
+  f1<-ggplot(data = df, 
+             aes(x = factor(category), y = F1,fill = category))+
+    geom_boxplot(size=0.2, position=position_dodge(1))+
+    geom_point(position=position_jitterdodge(jitter.width=3, jitter.height=0), 
+               size=0.4, color = "black", alpha=0.9)+
+    facet_grid(cell.type~cp, scales='free_x', space='free_x')+
+    theme(axis.text.x = element_text(angle=90), 
+          legend.title=element_blank(),
+          axis.ticks.x=element_blank(), 
+          axis.text.x.bottom =element_blank(), 
+          axis.title.x=element_blank(),
+          panel.spacing = unit(0.5, "lines"), 
+          legend.position="top", 
+          legend.text=element_text(margin=margin(r=0.5,unit="cm"),size=14))+
+    guides(fill = guide_legend(ncol = 9))+
+    #xlab("")+
+    ylab("F1 score")+ 
+    scale_y_continuous(limits=c(0, 1), oob = rescale_none)+
+    scale_fill_manual(values=clrs)
+  ggarrange(precision, sensitivity,f1, heights = c(3, 3,3), ncol = 1,  nrow = 3,
+            legend="top", common.legend = T)
+  ggsave(paste(name, "pdf",sep="."), width = 23, height=12)
+  
+}
 
-
-ggarrange(precision, sensitivity, heights = c(3,3), ncol = 1,  nrow = 2,
-          legend="top", common.legend = T)
-ggsave("simulation_result.pdf", width = 23, height=12)
+plot.result(df=adj.p, name="all.res",  clrs = c('lightsteelblue2','navajowhite2',
+                 "steelblue2","darkgoldenrod1",
+                 "royalblue1","coral","blue4","tomato3",
+                 "green4"))
+plot.result(df=adj.p.tt, name="treatt.res", clrs = c("steelblue2","darkgoldenrod1"))
+plot.result(df=adj.p.rest, name="t_stat.res", clrs = c('lightsteelblue2','navajowhite2',
+                 "royalblue1","coral","blue4","tomato3",
+                 "green4"))
 
 ```
+lets vary DE proportion
+```{r}
+groups_lst<- list(c(0.01, 0.99),
+                  c(0.05, 0.95),
+                  c(0.1, 0.9),
+                  c(0.2, 0.8),
+                  c(0.3, 0.7),
+                  c(0.4, 0.6),
+                  c(0.5, 0.5)
+                  )
+set.seed(9067)
+rep.times<-1
+seed.number.cp <- sample(x = 100:10000, size = rep.times, replace = FALSE)
+
+# rm(adj.p, adj.df)
+tic.clearlog()
+tic(paste(rep.times, "repeated rounds total time"))
+for (rep in 1: rep.times){
+  set.seed(seed.number.cp[rep])
+  rep.seed <- sample(x = seed.number.cp[rep]:seed.number.cp[rep]+93, 
+                         size = length(groups_lst), replace = FALSE)
+  print(paste("repeated round", rep, "started"))
+  tic(paste("repeated round", rep, "time"))
+  for (cp in 1:length(groups_lst)){
+    sim <- splatSimulate(curr_params, method = "groups", nGenes = 5000,
+                         batchCells = 1000, dropout.type = "none", out.prob = 0, 
+                         de.prob = c(0.2, 0.02),de.downProb = c(0, 0),
+                         group.prob = groups_lst[[cp]],
+                         #seed = seed.number.cp[cp], 
+                         seed = rep.seed[cp], 
+                         de.facLoc = c(1.1, 1.1),
+                         de.facScale = c(0.5, 0.5),
+                         verbose = FALSE
+                         )
+    
+    #sim <- logNormCounts(sim)
+    #sim <- runPCA(sim)
+    #plotPCA(sim, colour_by = "Group")+ggtitle("simulated CD4T cells")+ 
+    #  theme(plot.title = element_text(size = 20, face = "bold"))
+    
+    ############################################################################
+    # QC 
+    # remove lowly expressed genes 
+    numzero.genes <- rowSums(counts(sim)==0)
+    keep.genes <- numzero.genes < (ncol(counts(sim))-min(groups_lst[[cp]][1]*1000, 100))
+    keep.genes <- setdiff(row.names(sim)[keep.genes],
+                          intersect(row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1], 
+                                    row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]))
+    sim<- sim[keep.genes, ]
+    
+    # check the logFC for each gene 
+    obs_res<- computeObs(counts(sim), factor(sim$Group), statistic= "os.t")
+    DE.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
+    DE.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
+    #summary(obs_res$summary.tb[DE.g1, "logFC.g1"])
+    #summary(obs_res$summary.tb[DE.g2, "logFC.g2"])
+    
+    neglogFC.DEs <- c(intersect(DE.g1, row.names(obs_res$summary.tb)[obs_res$summary.tb$logFC.g1<0]),
+                      intersect(DE.g2, row.names(obs_res$summary.tb)[obs_res$summary.tb$logFC.g2<0])
+    )
+    # remove true DEs with negative logFC
+    if (length(neglogFC.DEs)>0) {
+      sim<- sim[-match(neglogFC.DEs, row.names(sim)), ]
+    }
+    message(paste("simulated data dimension:",paste(as.character(dim(sim)), collapse = ", ")))
+    
+    # set the identifier for the plots 
+    prefix<-paste("s",rep.seed[cp], paste(as.character(table(sim$Group)),collapse="_"), sep="_")
+    
+    ############################################################################
+    # run permutation for all stats
+    n.cores=parallel::detectCores()-8
+    if (cp == 1){
+      perm.size = 10000
+    }else{
+      perm.size = 4000
+    }
+    perm.array.lst<- pPerm.stat(counts(sim), sim$Group, 
+                                perm.size=perm.size, n.cores=n.cores)
+    
+    # generate perm & observation p-values for each stat 
+    os.t.res<- runComparison.stat(sim, perm.size, statistic = "os.t", 
+                                  sim_perm_arrays = perm.array.lst$os.t.stat, 
+                                  n.cores = n.cores)
+    os.modt.res<- runComparison.stat(sim, perm.size, statistic = "os.modt", 
+                                  sim_perm_arrays = perm.array.lst$os.modt.stat, 
+                                  n.cores = n.cores)
+    os.treatt.res<- runComparison.stat(sim, perm.size, statistic = "os.treatt", 
+                                  sim_perm_arrays = perm.array.lst$os.treatt.stat, 
+                                  n.cores = n.cores)
+    ts.modt.res<- runComparison.stat(sim, perm.size, statistic = "ts.modt", 
+                                  sim_perm_arrays = perm.array.lst$ts.modt.stat,
+                                  n.cores = n.cores)
+    lfc.p.res<-runComparison.stat(sim, perm.size, statistic = "lfc.p", 
+                                  sim_perm_arrays = perm.array.lst$lfc.p.stat, 
+                                  n.cores = n.cores)
+    # save the result for each stat 
+    #saveRDS(os.t.res, paste(prefix, "os.t.Rds", sep="."))
+    #saveRDS(os.treatt.res, paste(prefix, "os.treatt.Rds", sep="."))
+    #saveRDS(lfc.p.res, paste(prefix, "lfc.p.Rds", sep="."))
+    #saveRDS(ts.modt.res, paste(prefix, "ts.modt.Rds", sep="."))
+    #saveRDS(os.modt.res, paste(prefix, "os.modt.Rds", sep="."))
+    #setwd("~/Desktop/Data Science Research Project/MDSresearchproject/50run_7cp/30run_7cp_g23098")
+    #os.t.res<- readRDS(paste(prefix, "os.t.Rds", sep="."))
+    #os.treatt.res<- readRDS(paste(prefix, "os.treatt.Rds", sep="."))
+    #lfc.p.res<- readRDS( paste(prefix, "lfc.p.Rds", sep="."))
+    #ts.modt.res<- readRDS(paste(prefix, "ts.modt.Rds", sep="."))
+    #os.modt.res<- readRDS(paste(prefix, "os.modt.Rds", sep="."))
+    
+    ############################################################################
+    # creat the result table 
+    stat.lst<- c("os.t","os.treatt", "lfc.p","ts.modt", "os.modt")
+    res.lst<- list(os.t.res, os.treatt.res,lfc.p.res, ts.modt.res,os.modt.res)
+    if (exists("adj.df") == FALSE ){
+      cols.n<- c("group","cell.type","num.cells", "test.name", "num.true.upreg","num.upreg",
+                 "TP", "precision", "sensitivity","F1","overlap","TP.overlap","cutoff","perm.size",
+                 "seed.number","AUC","statistic")
+      adj.p<- setNames(data.frame(matrix(ncol = length(cols.n), nrow = 0)),cols.n)
+    }
+    for (a in 1:length(stat.lst)){
+      auc.values <- plotComparison(sim, perm.size = perm.size, seed.n = rep.seed[cp], 
+                                   result=res.lst[[a]])
+      if (stat.lst[a] == "ts.modt" | stat.lst[a] == "os.treatt"){
+        logFC.df<- as.data.frame(cbind(res.lst[[a]]$result.table[[1]][, 2],
+                                             res.lst[[a]]$result.table[[2]][, 2]))
+        row.names(logFC.df)<-row.names(res.lst[[a]]$obs.stat)
+        colnames(logFC.df)<-c("logFC.g1","logFC.g2")
+      trueDE<-res.lst[[a]]$true.upreg
+        if(stat.lst[a] == "os.treatt"){
+          trueDE = list(intersect(row.names(logFC.df[logFC.df$logFC.g1 > 0.1, ]),
+                                  trueDE[[1]]), 
+                        intersect(row.names(logFC.df[logFC.df$logFC.g2 > 0.1, ]),
+                                  trueDE[[2]]))
+        }
+      adj.df<-computeSummary3simple(res.lst[[a]]$obs.pval.adj, res.lst[[a]]$perm.pval.adj,
+                              adj = "adjusted",
+                              true.upreg = trueDE, 
+                              cell_num=as.vector(table(sim$Group)), 
+                              main.describe = paste(as.character(table(sim$Group)),collapse="_"), 
+                              seed.number=rep.seed[cp],perm.size=perm.size,
+                              logFC.df=logFC.df,
+                              auc.values=auc.values, statistic = stat.lst[[a]])
+      }else{
+      
+      adj.df<-computeSummary3simple(res.lst[[a]]$obs.pval.adj, res.lst[[a]]$perm.pval.adj,
+                              adj = "adjusted",
+                              true.upreg = res.lst[[a]]$true.upreg, 
+                              cell_num=as.vector(table(sim$Group)), 
+                              main.describe = paste(as.character(table(sim$Group)),collapse="_"), 
+                              seed.number=rep.seed[cp],perm.size=perm.size,
+                              auc.values=auc.values, statistic = stat.lst[[a]])}
+      
+      
+      #raw.p<- rbind(raw.p, raw.df)
+      adj.p<- rbind(adj.p, adj.df)
+    }
+    
+  }
+  print(paste("round", rep,"finished"))
+  toc(log = T)
+}
+toc(log = T)
+
+```
+
+
+#######################################
 (code chunk A) repeted version I of the second code chunk
 ```{r}
 groups_lst<- list(c(0.01, 0.99),
@@ -673,5 +839,92 @@ for (cp in 1:length(groups_lst)){
       theme(plot.title = element_text(size = 20, face = "bold")))
     dev.off()
 }
+```
+
+backup plot codes
+```{r}
+sensitivity<-ggplot(data = adj.p.tt, 
+       aes(x = factor(category), y = sensitivity,fill = category))+
+  
+  #geom_bar(width=0.65, stat="identity",color="black", position=position_dodge())+
+  #geom_jitter(position=position_jitter(0.4))+
+  #geom_point(position=position_jitterdodge(0.6))+
+  #geom_dotplot(binaxis = "y", stackgroups = TRUE,  method = "histodot")+
+  #geom_point(position=position_jitterdodge(dodge.width=0.1)) +
+  geom_boxplot(size=0.2, position=position_dodge(1))+
+  geom_point(position=position_jitterdodge(jitter.width=3, jitter.height=0), 
+             size=0.4, color = "black", alpha=0.9)+
+  
+  facet_grid(cell.type~cp, scales='free_x', space='free_x')+
+  theme(axis.text.x = element_text(angle=90), 
+        legend.title=element_blank(),
+        axis.ticks.x=element_blank(), 
+        axis.text.x.bottom =element_blank(), 
+        axis.title.x=element_blank(),
+        panel.spacing = unit(0.5, "lines"), 
+        legend.position="top", #legend.text=element_text(),
+        #legend.spacing.x = unit(0.6, 'cm'),
+        legend.text=element_text(margin=margin(r=0.6,unit="cm"),size=18))+
+  guides(fill = guide_legend(ncol = 9))+
+  #xlab("")+
+  ylab("sensitivity")+ 
+  scale_y_continuous(limits=c(0, 1), oob = rescale_none)+
+  scale_fill_manual(values=c("steelblue2","darkgoldenrod1"))
+ggsave("sensitivity.pdf", width = 18, height=6)
+precision<-ggplot(data = adj.p.rest, 
+       aes(x = factor(category), y = precision,fill = category))+
+  geom_boxplot(size=0.2, position=position_dodge(1))+
+  geom_point(position=position_jitterdodge(jitter.width=3, jitter.height=0), 
+             size=0.4, color = "black", alpha=0.9)+
+  
+  facet_grid(cell.type~cp, scales='free_x', space='free_x')+
+   theme(axis.text.x = element_text(angle=90), 
+        legend.title=element_blank(),
+        axis.ticks.x=element_blank(), 
+        axis.text.x.bottom =element_blank(), 
+        axis.title.x=element_blank(),
+        panel.spacing = unit(0.5, "lines"), 
+        legend.position="top", 
+        legend.text=element_text(margin=margin(r=0.6,unit="cm"),size=18))+
+  guides(fill = guide_legend(ncol = 9))+
+  #xlab("")+
+  ylab("precision")+ 
+  scale_y_continuous(limits=c(0, 1), oob = rescale_none)+
+  scale_fill_manual(values=c('lightsteelblue2','navajowhite2',
+                              "steelblue2","darkgoldenrod1",
+                              "royalblue1","coral","blue4","tomato3",
+                              "green4"))
+ggsave("precision.pdf", width = 18, height=6)
+
+f1<-ggplot(data = adj.p, 
+       aes(x = factor(category), y = F1,fill = category))+
+  geom_boxplot(size=0.2, position=position_dodge(1))+
+  geom_point(position=position_jitterdodge(jitter.width=3, jitter.height=0), 
+             size=0.4, color = "black", alpha=0.9)+
+  facet_grid(cell.type~cp, scales='free_x', space='free_x')+
+  theme(axis.text.x = element_text(angle=90), 
+        legend.title=element_blank(),
+        axis.ticks.x=element_blank(), 
+        axis.text.x.bottom =element_blank(), 
+        axis.title.x=element_blank(),
+        panel.spacing = unit(0.5, "lines"), 
+        legend.position="top", 
+        legend.text=element_text(margin=margin(r=0.5,unit="cm"),size=14))+
+  guides(fill = guide_legend(ncol = 9))+
+  #xlab("")+
+  ylab("F1 score")+ 
+  scale_y_continuous(limits=c(0, 1), oob = rescale_none)+
+  scale_fill_manual(values=c('lightsteelblue2','navajowhite2',
+                              "steelblue2","darkgoldenrod1",
+                              "royalblue1","coral","blue4","tomato3",
+                              "green4"))
+ggsave("F1.pdf", width = 18, height=6)
+
+
+ggarrange(precision, sensitivity, heights = c(3,3), ncol = 1,  nrow = 2,
+          legend="top", common.legend = T)
+ggsave("simulation_result.pdf", width = 23, height=12)
+
+
 ```
 
