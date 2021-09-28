@@ -1,8 +1,11 @@
 # cell.type is a factor containing the cell type for each cell 
-computeObs<- function(cm, cell.type, statistic = "t", lfc.cutoff=0.1){
+computeObs<- function(cm, cell.type, statistic = "os.t", lfc.cutoff=0.1){
   
   # normalise the count matrix 
   logcounts.all <- lognormCounts(cm,log=TRUE,prior.count=0.5) 
+  #tic("cyclic.logcounts")
+  #cyclic.logcounts<- limma::normalizeBetweenArrays(logcounts.all, method="cyclicloess")
+  #toc()
   
   all.bct <- factor(cell.type)
   design <- model.matrix(~0+all.bct)
@@ -19,34 +22,46 @@ computeObs<- function(cm, cell.type, statistic = "t", lfc.cutoff=0.1){
                       nrow=(ncol(design)-length(levels(all.bct))))
   test <- rbind(mycont,zero.rows)
   
-  fit.obs <- lmFit(logcounts.all,design)
-  fit.contrast <- contrasts.fit(fit.obs,contrasts=test)
+  fit.obs <- limma::lmFit(logcounts.all,design)
+  #fit.obs <- limma::lmFit(cyclic.logcounts,design)
+  fit.contrast <- limma::contrasts.fit(fit.obs,contrasts=test)
   
-  fit.cont.eb.obs <- eBayes(fit.contrast,trend=TRUE,robust=TRUE)
+  fit.cont.eb.obs <- limma::eBayes(fit.contrast,trend=TRUE,robust=TRUE)
   # fit.cont.eb.obs$genes <- ann.keep.all
-  
+  cell.types<-length(levels(all.bct))
+  tb<- matrix(nrow = nrow(cm), ncol =cell.types +1)
+  colnames(tb)<-c(unlist(strsplit(paste("logFC.g", 1:cell.types,
+                                      collapse=" ", sep=""), " ")), 
+                  "AveExpr")
+  for (j in 1:cell.types){
+    tb.ct<- limma::topTable(fit.cont.eb.obs,sort="none",
+                                number = nrow(fit.cont.eb.obs), coef=j)
+    tb[, j] <-tb.ct[,"logFC"]
+  }
+ 
+  tb[, j+1]<-tb.ct[,"AveExpr"]
+  row.names(tb)<- row.names(tb.ct)
+  tb<-as.data.frame(tb)
   if (statistic == "os.t"){
     # one-sided t statistic 
     obs.stat <- fit.contrast$coef/ fit.contrast$stdev.unscaled / fit.contrast$sigma
     # p value for one-sided t statistic 
-    obs.pval<-pt(ordinary.t, df=fit.contrast$df.residual, lower.tail=FALSE)
+    obs.pval<-pt(obs.stat, df=fit.contrast$df.residual, lower.tail=FALSE)
   }else if (statistic == "ts.t"){
     obs.stat <- fit.contrast$coef/ fit.contrast$stdev.unscaled / fit.contrast$sigma
     # p value for one-sided t statistic 
-    obs.pval<-2*pt(ordinary.t, df=fit.contrast$df.residual, lower.tail=FALSE)
+    obs.pval<-2*pt(obs.stat, df=fit.contrast$df.residual, lower.tail=FALSE)
     
     
     
   }else if (statistic == "os.modt"){
     obs.stat<- fit.cont.eb.obs$t
-    obs.mod.pval<- pt(obs.modtstat, df=fit.cont.eb.obs$df.total, lower.tail=FALSE)
+    obs.pval<- pt(obs.stat, df=fit.cont.eb.obs$df.total, lower.tail=FALSE)
     
   }else if (statistic == "ts.modt"){
     # two-sided moderated t statistic 
     obs.stat<- fit.cont.eb.obs$t
     obs.pval<- fit.cont.eb.obs$p.value
-    
-    
     
     
   }else if (statistic == "os.treatt"){
@@ -57,26 +72,48 @@ computeObs<- function(cm, cell.type, statistic = "t", lfc.cutoff=0.1){
   
   }else if (statistic == "ts.treatt"){
     # two-sided treat t statistic 
-    obs.stat<- treat(fit.cont.eb.obs, lfc=lfc.cutoff, trend=TRUE, robust = TRUE)
-    obs.pval<-obs.stat$p.value
-    
-    
-    
+    treat.result<- treat(fit.cont.eb.obs, lfc=lfc.cutoff, trend=TRUE, robust = TRUE)
+    obs.stat<- treat.result$t
+    obs.pval<-treat.result$p.value
   }else if (statistic == "lfc.p"){
-    # logFc * (1-p)
-    new.t <- fit.contrast$coef*(1-pt(fit.contrast$coef/ fit.contrast$stdev.unscaled / fit.contrast$sigma, 
-                                     df = fit.contrast$df.residual,lower.tail=FALSE))
-  }
-  
 
-  table.g1 <- topTable(fit.cont.eb.obs,sort="none",number = nrow(fit.cont.eb.obs), coef=1)
-  table.g2 <- topTable(fit.cont.eb.obs,sort="none",number = nrow(fit.cont.eb.obs), coef=2)
-  
-  tb<- as.data.frame(cbind(logFC.g1 = table.g1[, c("logFC")],
-                           logFC.g2 = table.g2[, c("logFC")], AveExpr = table.g2[,"AveExpr"]))
-  row.names(tb)<- row.names(table.g1)
-  
-  
+    #obs.stat <- fit.contrast$coef*(1-pt(fit.contrast$coef/ fit.contrast$stdev.unscaled / fit.contrast$sigma, 
+    #                                 df = fit.contrast$df.residual,lower.tail=FALSE))
+    obs.stat <- 0.8*fit.contrast$coef+ 0.2*(1-pt(fit.contrast$coef/ fit.contrast$stdev.unscaled / fit.contrast$sigma, 
+                                        df = fit.contrast$df.residual,lower.tail=FALSE))
+    message(paste("Can't compute exact p value for ",statistic, " for limma, use one-sided p value from a t-statistic instead"))
+    # one-sided t statistic 
+    t.stat <- fit.contrast$coef/ fit.contrast$stdev.unscaled / fit.contrast$sigma
+    # p value for one-sided t statistic 
+    obs.pval<-pt(t.stat, df=fit.contrast$df.residual, lower.tail=FALSE)
+    
+  }else if (statistic == "lfc.avgexp"){
+    # logFc * (1-p)
+    obs.stat <- fit.contrast$coef*abs(table.g1$AveExpr)*(1-pt(fit.contrast$coef/ fit.contrast$stdev.unscaled / fit.contrast$sigma, 
+                                                              df = fit.contrast$df.residual,lower.tail=FALSE))
+    print(paste("Can't compute exact p value for ",statistic, " for limma, use one-sided p value from a t-statistic instead"))
+    # one-sided t statistic 
+    t.stat <- fit.contrast$coef/ fit.contrast$stdev.unscaled / fit.contrast$sigma
+    # p value for one-sided t statistic 
+    obs.pval<-pt(t.stat, df=fit.contrast$df.residual, lower.tail=FALSE)
+    
+  }else if (statistic == "lfc.treatp"){
+    # logFc * (1-p)
+    # one-sided treat t statistic 
+    treat.t.stat<- (fit.contrast$coef - lfc.cutoff)/ fit.contrast$stdev.unscaled / fit.contrast$sigma
+    # p value for one-sided treat t statistic 
+    treat.t.pval<-pt(treat.t.stat, df=fit.contrast$df.residual, lower.tail=FALSE)
+    
+    obs.stat <- fit.contrast$coef*(1-treat.t.pval)
+    message(paste("Can't compute exact p value for ",statistic, " for limma, use one-sided p value from a t-statistic instead"))
+    # one-sided t statistic 
+    t.stat <- fit.contrast$coef/ fit.contrast$stdev.unscaled / fit.contrast$sigma
+    # p value for one-sided t statistic 
+    obs.pval<-pt(t.stat, df=fit.contrast$df.residual, lower.tail=FALSE)
+    
+  }else{
+    message(paste("specified statistic", statistic, " not supported"))
+  }
   return (list(obs.stat = obs.stat, 
                obs.pval = obs.pval,  
                fit.cont.eb.obs = fit.cont.eb.obs,

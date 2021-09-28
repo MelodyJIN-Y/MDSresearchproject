@@ -1,6 +1,10 @@
 # A modified version of pPerm function, will include different statistics for each permutation 
 pPerm.stat<- function(cm, groups, perm.size = 1000,lfc.cutoff=0.1, n.cores=1){
-  
+  if (n.cores>1){
+    message(paste("Running", perm.size, "permutation with", n.cores, "cores in parallel"))
+  }else{
+    message(paste("Running", perm.size, "permutation in sequential"))
+  }
   logcounts.all <- lognormCounts(cm, log=TRUE, prior.count=0.5) 
   
   # permutate all.bct 
