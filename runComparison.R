@@ -1,21 +1,37 @@
-runComparison<-function(sim, perm.size){
-  
-  obs_res<- computeObs(counts(sim), factor(sim$Group))
+runComparison<-function(sim, perm.size, statistic = "os.t", lfc.cutoff=0.1, n.cores=1){
+  message(paste("Statistic = ", statistic))
+  obs_res<- computeObs(counts(sim), factor(sim$Group),statistic= statistic, lfc.cutoff=lfc.cutoff)
   obs.stat<- obs_res$obs.stat
   obs.pval<- obs_res$obs.pval
   obs.pval<- as.data.frame(obs.pval)
 
-  
+  if (n.cores>1){
+    message(paste("Running", perm.size, "permutation with", n.cores, "cores in parallel"))
+  }else{
+    message(paste("Running", perm.size, "permutation in sequential"))
+  }
   # run permutation
-  sim_perm_arrays <- tPerm(counts(sim), sim$Group, perm.size=perm.size)
+  #sim_perm_arrays <- tPerm(counts(sim), sim$Group, perm.size=perm.size, 
+  #                        statistic= statistic,lfc.cutoff=lfc.cutoff)
+  sim_perm_arrays <- pPerm(counts(sim), sim$Group, perm.size=perm.size, 
+                           statistic= statistic,lfc.cutoff=lfc.cutoff, 
+                           n.cores=n.cores)
   
   # permutation stats
   t.perm.array<- sim_perm_arrays$t.perm
   
   # t-stat
-  perm.pvals<-apply(expand.grid(x = 1:dim(counts(sim))[1], 
+  # two-sided p
+  if (substr(statistic,1,2) == "ts"){
+    perm.pvals<-apply(expand.grid(x = 1:dim(counts(sim))[1], 
+                                  y = 1:dim(t.perm.array)[2]), 1, 
+                      function(r) (sum(abs(t.perm.array[r[1],r[2], ]) > abs(obs.stat[r[1],r[2]]))+1)/(perm.size+1) )
+    
+  }else{
+    perm.pvals<-apply(expand.grid(x = 1:dim(counts(sim))[1], 
                                   y = 1:dim(t.perm.array)[2]), 1, 
                       function(r) (sum(t.perm.array[r[1],r[2], ] > obs.stat[r[1],r[2]])+1)/(perm.size+1) )
+  }
   
   perm.pval<- matrix(perm.pvals, 
                        nrow=dim(counts(sim))[1], 

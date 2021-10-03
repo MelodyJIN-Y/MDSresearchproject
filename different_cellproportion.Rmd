@@ -56,6 +56,33 @@ sce <- SingleCellExperiment(list(counts=as.matrix(cm.processed.r)),colData=metad
 curr_params <- newSplatParams()
 # params <- setParam(params, "group.prob", ct_prop)
 curr_params <- splatEstimate(sce,params = curr_params)
+
+
+simulationQC<-function(sim, smaller.cp){
+  # QC 
+  # remove lowly expressed genes 
+  numzero.genes <- rowSums(counts(sim)==0)
+  keep.genes <- numzero.genes < (ncol(counts(sim))-min(smaller.cp*1000, 100))
+  keep.genes <- setdiff(row.names(sim)[keep.genes],
+                        intersect(row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1], 
+                                  row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]))
+  sim<- sim[keep.genes, ]
+  
+  # check the logFC for each gene 
+  obs_res<- computeObs(counts(sim), factor(sim$Group), statistic= "os.t")
+  DE.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
+  DE.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
+  
+  neglogFC.DEs <- c(intersect(DE.g1, row.names(obs_res$summary.tb)[obs_res$summary.tb$logFC.g1<0]),
+                    intersect(DE.g2, row.names(obs_res$summary.tb)[obs_res$summary.tb$logFC.g2<0])
+  )
+  # remove true DEs with negative logFC
+  if (length(neglogFC.DEs)>0) {
+    sim<- sim[-match(neglogFC.DEs, row.names(sim)), ]
+  }
+  message(paste("simulated data dimension:",paste(as.character(dim(sim)), collapse = ", ")))
+  return(sim)
+}
 ```
 
 ```{r}
@@ -319,6 +346,7 @@ for (rep in 1: rep.times){
     if (length(neglogFC.DEs)>0) {
       sim<- sim[-match(neglogFC.DEs, row.names(sim)), ]
     }
+   # sim<-simulationQC(sim, groups_lst[[cp]][1])
     message(paste("simulated data dimension:",paste(as.character(dim(sim)), collapse = ", ")))
     
     # set the identifier for the plots 
@@ -334,23 +362,27 @@ for (rep in 1: rep.times){
     }
     #perm.array.lst<- pPerm.stat(counts(sim), sim$Group, 
     #                            perm.size=perm.size, n.cores=n.cores)
-    
+    #true.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
+    #true.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
+    #true.g1<- intersect(true.g1, row.names(sim))
+    #true.g2<- intersect(true.g2, row.names(sim))
+    #true.upreg = list(true.g1, true.g2)
     # generate perm & observation p-values for each stat 
     #os.t.res<- runComparison.stat(sim, perm.size, statistic = "os.t", 
     #                              sim_perm_arrays = perm.array.lst$os.t.stat, 
-    #                              n.cores = n.cores)
+    #                              n.cores = n.cores,true.upreg=true.upreg)
     #os.modt.res<- runComparison.stat(sim, perm.size, statistic = "os.modt", 
     #                              sim_perm_arrays = perm.array.lst$os.modt.stat, 
-    #                              n.cores = n.cores)
+    #                              n.cores = n.cores,true.upreg=true.upreg)
     #os.treatt.res<- runComparison.stat(sim, perm.size, statistic = "os.treatt", 
     #                              sim_perm_arrays = perm.array.lst$os.treatt.stat, 
-    #                              n.cores = n.cores)
+    #                              n.cores = n.cores,true.upreg=true.upreg)
     #ts.modt.res<- runComparison.stat(sim, perm.size, statistic = "ts.modt", 
     #                              sim_perm_arrays = perm.array.lst$ts.modt.stat,
-    #                              n.cores = n.cores)
+    #                              n.cores = n.cores,true.upreg=true.upreg)
     #lfc.p.res<-runComparison.stat(sim, perm.size, statistic = "lfc.p", 
     #                              sim_perm_arrays = perm.array.lst$lfc.p.stat, 
-    #                              n.cores = n.cores)
+    #                              n.cores = n.cores,true.upreg=true.upreg)
     # save the result for each stat 
     #saveRDS(os.t.res, paste(prefix, "os.t.Rds", sep="."))
     #saveRDS(os.treatt.res, paste(prefix, "os.treatt.Rds", sep="."))
@@ -449,7 +481,7 @@ set.seed(99899)
 rep.times<-30
 seed.number.cp <- sample(x = 100:10000, size = rep.times, replace = FALSE)
 
-# rm(adj.p, adj.df)
+rm(adj.p, adj.df)
 tic.clearlog()
 tic(paste(rep.times, "repeated rounds total time"))
 for (rep in 1: rep.times){
@@ -508,10 +540,10 @@ for (rep in 1: rep.times){
     }
     message(paste("simulated data dimension:",paste(as.character(dim(sim)), collapse = ", ")))
     
-    setwd("/Volumes/Expansion/Data Science Research Project/MDSresearchproject/50run_7cp/20run_3cp_g9897")
+   # setwd("/Volumes/Expansion/Data Science Research Project/MDSresearchproject/50run_3cp/20run_3cp_g9897")
     # set the identifier for the plots 
     prefix<-paste("s",rep.seed[cp], paste(as.character(table(sim$Group)),collapse="_"), sep="_")
-    prefix<-paste("/Volumes/Expansion/Data Science Research Project/MDSresearchproject/50run_7cp/20run_3cp_g9897/", 
+    prefix<-paste("/Volumes/Expansion/Data Science Research Project/MDSresearchproject/50run_3cp/30run_3cp_g99899/", 
                   prefix, sep="")
     ############################################################################
     # run permutation for all stats
@@ -521,8 +553,8 @@ for (rep in 1: rep.times){
     }else{
       perm.size = 4000
     }
-    #perm.array.lst<- pPerm.stat(counts(sim), sim$Group, 
-    #                            perm.size=perm.size, n.cores=n.cores)
+    perm.array.lst<- pPerm.stat(counts(sim), sim$Group, 
+                                perm.size=perm.size, n.cores=n.cores)
     
     true.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
     true.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
@@ -534,34 +566,34 @@ for (rep in 1: rep.times){
     
     
     # generate perm & observation p-values for each stat 
-    #os.t.res<- runComparison.stat(sim, perm.size, statistic = "os.t", 
-    #                              sim_perm_arrays = perm.array.lst$os.t.stat, 
-    #                              n.cores = n.cores,true.upreg = true.upreg)
-    #os.modt.res<- runComparison.stat(sim, perm.size, statistic = "os.modt", 
-    #                              sim_perm_arrays = perm.array.lst$os.modt.stat, 
-    #                              n.cores = n.cores,true.upreg = true.upreg)
-    #os.treatt.res<- runComparison.stat(sim, perm.size, statistic = "os.treatt", 
-    #                              sim_perm_arrays = perm.array.lst$os.treatt.stat, 
-    #                              n.cores = n.cores,true.upreg = true.upreg)
-    #ts.modt.res<- runComparison.stat(sim, perm.size, statistic = "ts.modt", 
-    #                              sim_perm_arrays = perm.array.lst$ts.modt.stat,
-    #                              n.cores = n.cores,true.upreg = true.upreg)
-    #lfc.p.res<-runComparison.stat(sim, perm.size, statistic = "lfc.p", 
-    #                              sim_perm_arrays = perm.array.lst$lfc.p.stat, 
-    #                              n.cores = n.cores, true.upreg = true.upreg)
+    os.t.res<- runComparison.stat(sim, perm.size, statistic = "os.t", 
+                                  sim_perm_arrays = perm.array.lst$os.t.stat, 
+                                  n.cores = n.cores,true.upreg = true.upreg)
+    os.modt.res<- runComparison.stat(sim, perm.size, statistic = "os.modt", 
+                                  sim_perm_arrays = perm.array.lst$os.modt.stat, 
+                                  n.cores = n.cores,true.upreg = true.upreg)
+    os.treatt.res<- runComparison.stat(sim, perm.size, statistic = "os.treatt", 
+                                  sim_perm_arrays = perm.array.lst$os.treatt.stat, 
+                                  n.cores = n.cores,true.upreg = true.upreg)
+    ts.modt.res<- runComparison.stat(sim, perm.size, statistic = "ts.modt", 
+                                  sim_perm_arrays = perm.array.lst$ts.modt.stat,
+                                  n.cores = n.cores,true.upreg = true.upreg)
+    lfc.p.res<-runComparison.stat(sim, perm.size, statistic = "lfc.p", 
+                                  sim_perm_arrays = perm.array.lst$lfc.p.stat, 
+                                  n.cores = n.cores, true.upreg = true.upreg)
     # save the result for each stat 
     #setwd("/Volumes/Expansion/Data Science Research Project/MDSresearchproject/50run_7cp/10run_3cp_g9897/")
-    #saveRDS(os.t.res, paste(prefix, "os.t.Rds", sep=""))
-    #saveRDS(os.treatt.res, paste(prefix, "os.treatt.Rds", sep="."))
-    #saveRDS(lfc.p.res, paste(prefix, "lfc.p.Rds", sep="."))
-    #saveRDS(ts.modt.res, paste(prefix, "ts.modt.Rds", sep="."))
-    #saveRDS(os.modt.res, paste(prefix, "os.modt.Rds", sep="."))
+    saveRDS(os.t.res, paste(prefix, "os.t.Rds", sep=""))
+    saveRDS(os.treatt.res, paste(prefix, "os.treatt.Rds", sep="."))
+    saveRDS(lfc.p.res, paste(prefix, "lfc.p.Rds", sep="."))
+    saveRDS(ts.modt.res, paste(prefix, "ts.modt.Rds", sep="."))
+    saveRDS(os.modt.res, paste(prefix, "os.modt.Rds", sep="."))
     
-    os.t.res<- readRDS(paste(prefix, "os.t.Rds", sep=""))
-    os.treatt.res<- readRDS(paste(prefix, "os.treatt.Rds", sep="."))
-    lfc.p.res<- readRDS( paste(prefix, "lfc.p.Rds", sep="."))
-    ts.modt.res<- readRDS(paste(prefix, "ts.modt.Rds", sep="."))
-    os.modt.res<- readRDS(paste(prefix, "os.modt.Rds", sep="."))
+    #os.t.res<- readRDS(paste(prefix, "os.t.Rds", sep=""))
+    #os.treatt.res<- readRDS(paste(prefix, "os.treatt.Rds", sep="."))
+    #lfc.p.res<- readRDS( paste(prefix, "lfc.p.Rds", sep="."))
+    #ts.modt.res<- readRDS(paste(prefix, "ts.modt.Rds", sep="."))
+    #os.modt.res<- readRDS(paste(prefix, "os.modt.Rds", sep="."))
     
     ############################################################################
     # creat the result table 
@@ -622,11 +654,15 @@ for (rep in 1: rep.times){
   toc(log = T)
 }
 toc(log = T)
-saveRDS(adj.p, "r30.3ct.adj.p.Rds")
+setwd("/Volumes/Expansion/Data Science Research Project/MDSresearchproject/50run_3cp/20run_3cp_g9897/")
+adj_20<-readRDS("/Volumes/Expansion/Data Science Research Project/MDSresearchproject/50run_3cp/20run_3cp_g9897/r20.3ct.adj.p.Rds")
+#saveRDS(adj_50, "r50.3ct.adj.p.Rds")
+adj_50<- rbind(adj_20, adj.p)
 ```
 
 
 ```{r}
+adj.p<- readRDS("/Users/MelodyJin/Desktop/Data Science Research Project/MDSresearchproject/50run_7cp/V2_50r_adj.p.Rds")
 adj.p$group<- factor(adj.p$group)
 adj.p[adj.p$statistic=="lfc.p"&adj.p$test.name=="limma","statistic"]<-"os.t"
 
@@ -651,7 +687,7 @@ gr<- unlist(groups_lst)*100
 # combined=FALSE, group=3
 cp.ft<-as.vector(rep(tapply(gr, as.character(gl(length(gr), 3, length(gr))),   
                                 FUN= paste, collapse=':'), 1))
-adj.p$cp<- rep(paste("group1:group2:group3 = ",cp.ft, sep=""),times=20,each = 6*5)
+adj.p$cp<- rep(paste("group1:group2:group3 = ",cp.ft, sep=""),times=30,each = 6*5)
 adj.p$cp<-factor(adj.p$cp, levels = c("group1:group2:group3 = 10:10:80",
                                       "group1:group2:group3 = 20:20:60",
                                       "group1:group2:group3 = 30:30:40")
@@ -659,12 +695,28 @@ adj.p$cp<-factor(adj.p$cp, levels = c("group1:group2:group3 = 10:10:80",
 
 # combined=FALSE
 cp.ft<-as.vector(rep(tapply(gr, as.character(gl(length(gr), 2, length(gr))),   
-                                FUN= paste, collapse='_'), 1))
-adj.p$cp<- rep(cp.ft,times=5,each = 4*5)
+                                FUN= paste, collapse='% : '), 1))
+adj.p$cp<- rep(paste("#group1 : #group2 = ",paste(cp.ft, "%",sep=""), sep=""),times=5,each = 10)
+adj.p$cp<-factor(adj.p$cp, 
+                 levels = c("#group1 : #group2 = 1% : 99%",
+                            "#group1 : #group2 = 5% : 95%",
+                            "#group1 : #group2 = 10% : 90%",
+                            "#group1 : #group2 = 20% : 80%",
+                            "#group1 : #group2 = 30% : 70%",
+                            "#group1 : #group2 = 40% : 60%",
+                            "#group1 : #group2 = 50% : 50%")
+                 )
 # combined = TRUE
 adj.p$cp<- rep(cp.ft,times=5,each = 2*5)
 
 adj.p$cp<-factor(adj.p$cp, levels = c("1_99","5_95","10_90","20_80","30_70","40_60","50_50"))
+cps<-c("#group1 : #group2 = 1% : 99%",
+       "#group1 : #group2 = 5% : 95%",
+       "#group1 : #group2 = 10% : 90%",
+       "#group1 : #group2 = 20% : 80%",
+       "#group1 : #group2 = 30% : 70%",
+       "#group1 : #group2 = 40% : 60%",
+       "#group1 : #group2 = 50% : 50%")
 ntstat_lst<-c("limma os.t", 
                 "permutation os.t",
                 "limma os.modt", 
@@ -674,17 +726,26 @@ ntstat_lst<-c("limma os.t",
                 "permutation lfc.p")
 
 adj.p.tt<- adj.p[adj.p$category%in% c("limma os.treatt", "permutation os.treatt"), ]
-adj.p.rest<- adj.p[adj.p$category %in% ntstat_lst, ]
 
-adj.p.less<-adj.p[adj.p$cp %in% c("5_95","10_90","20_80","30_70","40_60","50_50"), ]
+adj.p.osts<- adj.p[adj.p$category %in% ntstat_lst[c(1,2,5,6)], ]
+adj.p.ost<- adj.p[adj.p$category %in% ntstat_lst[c(1,2,3,4, 7)], ]
+
+adj.p.less<-adj.p[adj.p$cp %in% c(#"#group1 : #group2 = 5% : 95%",
+                            "#group1 : #group2 = 10% : 90%",
+                            "#group1 : #group2 = 20% : 80%",
+                            "#group1 : #group2 = 30% : 70%",
+                            "#group1 : #group2 = 40% : 60%",
+                            "#group1 : #group2 = 50% : 50%"), ]
 
 
-plot.result<-function(df, name, clrs){
-  
- 
+plot.result<-function(df, name, clrs, prec.ylim=c(0, 1), sens.ylim=c(0,1),
+                      f1.ylim=c(0,1), selected_cps){
+  if (length(selected_cps)>0){
+    df<-df[which(df$cp %in% selected_cps), ]
+  }
   sensitivity<-ggplot(data = df, 
                       aes(x = factor(category), y = sensitivity,fill = category))+
-    geom_boxplot(size=0.2, position=position_dodge(1))+
+    geom_boxplot(size=0.2, width= 0.5, position=position_dodge(1))+
     geom_point(position=position_jitterdodge(jitter.width=3, jitter.height=0), 
                size=0.4, color = "black", alpha=0.9)+
     facet_grid(cell.type~cp, scales='free_x', space='free_x')+
@@ -693,18 +754,20 @@ plot.result<-function(df, name, clrs){
           axis.ticks.x=element_blank(), 
           axis.text.x.bottom =element_blank(), 
           axis.title.x=element_blank(),
+          axis.title.y=element_text(size=20), 
           panel.spacing = unit(0.5, "lines"), 
           legend.position="top", #legend.text=element_text(),
           #legend.spacing.x = unit(0.6, 'cm'),
-          legend.text=element_text(margin=margin(r=0.6,unit="cm"),size=18))+
-    guides(fill = guide_legend(ncol = 9))+
+          legend.text=element_text(margin=margin(r=0.3,unit="cm"), size=14),
+          strip.text = element_text(size = rel(1.5)))+
+    guides(fill = guide_legend(ncol =length(clrs)))+
     #xlab("")+
     ylab("sensitivity")+ 
-    scale_y_continuous(limits=c(0.75, 1), oob = rescale_none)+
+    scale_y_continuous(limits=sens.ylim, oob = rescale_none)+
     scale_fill_manual(values=clrs)
   precision<-ggplot(data = df, 
                     aes(x = factor(category), y = precision,fill = category))+
-    geom_boxplot(size=0.2, position=position_dodge(1))+
+    geom_boxplot(size=0.2,  width= 0.5, position=position_dodge(1))+
     geom_point(position=position_jitterdodge(jitter.width=3, jitter.height=0), 
                size=0.4, color = "black", alpha=0.9)+
     facet_grid(cell.type~cp, scales='free_x', space='free_x')+
@@ -713,13 +776,15 @@ plot.result<-function(df, name, clrs){
           axis.ticks.x=element_blank(), 
           axis.text.x.bottom =element_blank(), 
           axis.title.x=element_blank(),
+          axis.title.y=element_text(size=20), 
           panel.spacing = unit(0.5, "lines"), 
           legend.position="top", 
-          legend.text=element_text(margin=margin(r=0.6,unit="cm"),size=18))+
-    guides(fill = guide_legend(ncol = 9))+
+          legend.text=element_text(margin=margin(r=0.3,unit="cm"),size=14),
+          strip.text = element_text(size = rel(1.5)))+
+    guides(fill = guide_legend(ncol = length(clrs)))+
     #xlab("")+
     ylab("precision")+ 
-    scale_y_continuous(limits=c(0.75, 1), oob = rescale_none)+
+    scale_y_continuous(limits=prec.ylim, oob = rescale_none)+
     scale_fill_manual(values=clrs)
   f1<-ggplot(data = df, 
              aes(x = factor(category), y = F1,fill = category))+
@@ -734,26 +799,39 @@ plot.result<-function(df, name, clrs){
           axis.title.x=element_blank(),
           panel.spacing = unit(0.5, "lines"), 
           legend.position="top", 
-          legend.text=element_text(margin=margin(r=0.5,unit="cm"),size=14))+
-    guides(fill = guide_legend(ncol = 9))+
+          legend.text=element_text(margin=margin(r=0.5,unit="cm"),size=10), 
+          strip.text = element_text(size = rel(2)))+
+    guides(fill = guide_legend(ncol = length(clrs)))+
     #xlab("")+
     ylab("F1 score")+ 
-    scale_y_continuous(limits=c(0.8,1), oob = rescale_none)+
+    scale_y_continuous(limits=f1.ylim, oob = rescale_none)+
     scale_fill_manual(values=clrs)
-  ggarrange(precision, sensitivity,f1, heights = c(3,3,3), ncol = 1,  nrow = 3,
-            legend="top", common.legend = T)
-  ggsave(paste(name, "pdf",sep="."), width = 23, height=12)
+  ggarrange(precision, sensitivity, heights = c(3,3), ncol = 1,  nrow = 2,
+            legend="top", common.legend = T,align="hv")
+  ggsave(paste(name, "pdf",sep="."), width = 10, height=8)
+  return (list(precision, sensitivity, f1))
   
 }
 
-plot.result(df=adj.p, name="adj.p.r20.3ct.all",  clrs = c('lightsteelblue2','navajowhite2',
+plot.result(df=adj.p, name="www",  clrs = c('lightsteelblue2','navajowhite2',
                  "steelblue2","darkgoldenrod1",
                  "royalblue1","coral","blue4","tomato3",
-                 "green4"))
-plot.result(df=adj.p.tt, name="adj.p.r20.3ct.tt", clrs = c("steelblue2","darkgoldenrod1"))
-plot.result(df=adj.p.rest, name="adj.p.r20.3ct.rest", clrs = c('lightsteelblue2','navajowhite2',
-                 "royalblue1","coral","blue4","tomato3",
-                 "green4"))
+                 "green4"),selected_cps =cps)
+ggarrange(sensitivity.small, sensitivity.larger, heights = c(1,1), ncol = 2,  nrow = 1,
+            legend="top", common.legend = T)
+ 
+plot.result(df=adj.p.tt, name="adj.p.r50.7ct.tt.cp12", clrs = c("steelblue2","darkgoldenrod1"), 
+            selected_cps =cps[c(1,2)], c(0, 1), c(0, 1),c(0.8, 1))
+
+plot.result(df=adj.p.osts, name="adj.p.r50.7ct.osts", clrs = c('lightsteelblue2','navajowhite2',"blue4","tomato3"))
+plot.result(df=adj.p.ost, name="adj.p.r50.7ct.ost", clrs = c('lightsteelblue2','navajowhite2',
+                 "royalblue1","coral","green4"))
+
+plot.result(df=adj.p.ost, name="adj.p.r50.7ct.ost.cp12", 
+            clrs = c('lightsteelblue2','navajowhite2',
+                 "royalblue1","coral","green4"), 
+            selected_cps =cps[c(1,2)], c(0, 1), c(0, 1),c(0.8, 1)
+            )
 
 ```
  vary DE proportion
@@ -810,8 +888,7 @@ for (rep in 1: rep.times){
     obs_res<- computeObs(counts(sim), factor(sim$Group), statistic= "os.t")
     DE.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
     DE.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
-    #summary(obs_res$summary.tb[DE.g1, "logFC.g1"])
-    #summary(obs_res$summary.tb[DE.g2, "logFC.g2"])
+    
     
     neglogFC.DEs <- c(intersect(DE.g1, row.names(obs_res$summary.tb)[obs_res$summary.tb$logFC.g1<0]),
                       intersect(DE.g2, row.names(obs_res$summary.tb)[obs_res$summary.tb$logFC.g2<0])
@@ -819,9 +896,16 @@ for (rep in 1: rep.times){
     # remove true DEs with negative logFC
     if (length(neglogFC.DEs)>0) {
       sim<- sim[-match(neglogFC.DEs, row.names(sim)), ]
+      obs_res<- computeObs(counts(sim), factor(sim$Group), statistic= "os.t")
+      DE.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
+      DE.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
     }
-    message(paste("simulated data dimension:",paste(as.character(dim(sim)), collapse = ", ")))
     
+    message(paste("simulated data dimension:",paste(as.character(dim(sim)), collapse = ", ")))
+    print("Group1 true DE logFC summary")
+    print(summary(obs_res$summary.tb[DE.g1, "logFC.g1"]))
+    print("Group2 true DE logFC summary")
+    print(summary(obs_res$summary.tb[DE.g2, "logFC.g2"]))
     # set the identifier for the plots 
     prefix<-paste("s",rep.seed[cp], paste(as.character(table(sim$Group)),collapse="_"), sep="_")
     
@@ -858,7 +942,7 @@ for (rep in 1: rep.times){
     #saveRDS(lfc.p.res, paste(prefix, "lfc.p.Rds", sep="."))
     #saveRDS(ts.modt.res, paste(prefix, "ts.modt.Rds", sep="."))
     #saveRDS(os.modt.res, paste(prefix, "os.modt.Rds", sep="."))
-    #setwd("~/Desktop/Data Science Research Project/MDSresearchproject/50run_7cp/30run_7cp_g23098")
+    setwd("~/Desktop/Data Science Research Project/MDSresearchproject/5run_differDEprop")
     os.t.res<- readRDS(paste(prefix, "os.t.Rds", sep="."))
     os.treatt.res<- readRDS(paste(prefix, "os.treatt.Rds", sep="."))
     lfc.p.res<- readRDS( paste(prefix, "lfc.p.Rds", sep="."))
@@ -886,9 +970,9 @@ for (rep in 1: rep.times){
         colnames(logFC.df)<-c("logFC.g1","logFC.g2")
       trueDE<-res.lst[[a]]$true.upreg
         if(stat.lst[a] == "os.treatt"){
-          trueDE = list(intersect(row.names(logFC.df[logFC.df$logFC.g1 > 0.1, ]),
+          trueDE = list(intersect(row.names(logFC.df[logFC.df$logFC.g1 > 0.01, ]),
                                   trueDE[[1]]), 
-                        intersect(row.names(logFC.df[logFC.df$logFC.g2 > 0.1, ]),
+                        intersect(row.names(logFC.df[logFC.df$logFC.g2 > 0.01, ]),
                                   trueDE[[2]]))
         }
       adj.df<-computeSummary3simple(res.lst[[a]]$obs.pval.adj, res.lst[[a]]$perm.pval.adj,
@@ -899,7 +983,7 @@ for (rep in 1: rep.times){
                               seed.number=rep.seed[cp],perm.size=perm.size,
                               logFC.df=logFC.df,
                               auc.values=auc.values, statistic = stat.lst[[a]], 
-                              combined=TRUE)
+                              combined=FALSE)
       }else{
       
       adj.df<-computeSummary3simple(res.lst[[a]]$obs.pval.adj, res.lst[[a]]$perm.pval.adj,
@@ -909,7 +993,7 @@ for (rep in 1: rep.times){
                               main.describe = paste(as.character(table(sim$Group)),collapse="_"), 
                               seed.number=rep.seed[cp],perm.size=perm.size,
                               auc.values=auc.values, statistic = stat.lst[[a]],
-                              combined=TRUE)
+                              combined=FALSE)
       
       }
       
@@ -924,6 +1008,497 @@ for (rep in 1: rep.times){
 toc(log = T)
 
 ```
+
+try different logFC for treat t statistic
+DE logFC summary  
+```{r}
+logFC.g1<-matrix(nrow=7, ncol=15)
+colnames(logFC.g1)<-c("cp","trueDE","DEt0.05","DE0.1","DEt0.2","DEt0.4","DEt0.6","DEt0.8","DEt1",
+                      "Min.", "1st Qu.","Median","Mean", "3rd Qu.", "Max." )
+logFC.g2<-matrix(nrow=7, ncol=15) 
+colnames(logFC.g2)<-c("cp","trueDE","DEt0.05","DE0.1","DEt0.2","DEt0.4","DEt0.6","DEt0.8","DEt1",
+                      "Min.", "1st Qu.","Median","Mean", "3rd Qu.", "Max." )
+
+for (cp in 1:length(groups_lst)){
+    sim <- splatSimulate(curr_params, method = "groups", nGenes = 5000,
+                         batchCells = 1000, dropout.type = "none", out.prob = 0, 
+                         de.prob = c(0.02, 0.02),de.downProb = c(0, 0),
+                         group.prob = groups_lst[[cp]],
+                         seed = rep.seed[cp], 
+                         de.facLoc = c(1.1, 1.1),
+                         de.facScale = c(0.5, 0.5),
+                         verbose = FALSE
+                         )
+    # QC 
+    sim<-simulationQC(sim, groups_lst[[cp]][1])
+    message(paste("simulated data dimension:",paste(as.character(dim(sim)), collapse = ", ")))
+    
+    # set the identifier for the plots 
+    prefix<-paste("s",rep.seed[cp], paste(as.character(table(sim$Group)),collapse="_"), sep="_")
+
+    #
+    setwd("/Volumes/Expansion/Data Science Research Project/MDSresearchproject/50run_7cp/30run_7cp_g23098")
+    os.treatt.res<- readRDS(paste(prefix, "os.treatt.Rds", sep="."))
+
+    logFC.df<- as.data.frame(cbind(os.treatt.res$result.table[[1]][, 2],
+                                   os.treatt.res$result.table[[2]][, 2]))
+    colnames(logFC.df)<-c("logFC.g1", "logFC.g2")
+    row.names(logFC.df)<-row.names(os.treatt.res$obs.stat)
+    #print("group1 true DE summary")
+    logFC.g1[cp, 1]<-paste(groups_lst[[cp]]*100,collapse="_")
+    logFC.g2[cp, 1]<-paste(groups_lst[[cp]]*100,collapse="_")
+    
+    logFC.vals<- c(0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 1)
+    trueDE<-os.treatt.res$true.upreg
+    logFC.g1[cp, 2]<-length(trueDE[[1]])
+    logFC.g2[cp, 2]<-length(trueDE[[2]])
+    for (i in 1:length(logFC.vals)){
+      logFC.g1[cp, i+2]<-length(intersect(row.names(logFC.df[logFC.df$logFC.g1 > logFC.vals[i], ]),
+                                          trueDE[[1]]))
+      logFC.g2[cp, i+2]<-length(intersect(row.names(logFC.df[logFC.df$logFC.g2 > logFC.vals[i], ]),
+                                          trueDE[[2]]))
+    }
+    logFC.g1[cp,10:15]<- round(as.vector(summary(logFC.df[os.treatt.res$true.upreg[[1]], "logFC.g1"])), 5)
+    #print("group1 true DE summary")
+    logFC.g2[cp,10:15]<-round(as.vector(summary(logFC.df[os.treatt.res$true.upreg[[2]], "logFC.g2"])), 5)
+}
+
+```
+
+same code as vary DE, try to get more ideas about true DE distribution 
+```{r}
+groups_lst<- list(c(0.01, 0.99),
+                  c(0.05, 0.95),
+                  c(0.1, 0.9),
+                  c(0.2, 0.8),
+                  c(0.3, 0.7),
+                  c(0.4, 0.6),
+                  c(0.5, 0.5),
+                  c(0.6, 0.4),
+                  c(0.7, 0.3),
+                  c(0.8, 0.2),
+                  c(0.9, 0.1), 
+                  c(0.95, 0.05), 
+                  c(0.99, 0.01)
+                  )
+set.seed(9867)
+rep.times<-5
+seed.number.cp <- sample(x = 100:10000, size = rep.times, replace = FALSE)
+
+# rm(adj.p, adj.df)
+tic.clearlog()
+tic(paste(rep.times, "repeated rounds total time"))
+logFC.lst<-list()
+for (rep in 1: 1){
+  set.seed(seed.number.cp[rep])
+  rep.seed <- sample(x = seed.number.cp[rep]:seed.number.cp[rep]+98, 
+                     size = length(groups_lst), replace = FALSE)
+  print(paste("repeated round", rep, "started"))
+  tic(paste("repeated round", rep, "time"))
+  for (cp in 1:length(groups_lst)){
+    sim <- splatSimulate(curr_params, method = "groups", nGenes = 5000,
+                         batchCells = 1000, dropout.type = "none", out.prob = 0, 
+                         de.prob = c(0.1, 0.02),de.downProb = c(0, 0),
+                         group.prob = groups_lst[[cp]],
+                         #seed = seed.number.cp[cp], 
+                         seed = rep.seed[cp], 
+                         de.facLoc = c(1.1, 1.1),
+                         de.facScale = c(0.5, 0.5),
+                         verbose = FALSE
+    )
+    
+    #sim <- logNormCounts(sim)
+    #sim <- runPCA(sim)
+    #plotPCA(sim, colour_by = "Group")+ggtitle("simulated CD4T cells")+ 
+    #  theme(plot.title = element_text(size = 20, face = "bold"))
+    
+    ############################################################################
+    # QC 
+    # remove lowly expressed genes 
+    numzero.genes <- rowSums(counts(sim)==0)
+    keep.genes <- numzero.genes < (ncol(counts(sim))-min(groups_lst[[cp]][1]*1000, 100))
+    keep.genes <- setdiff(row.names(sim)[keep.genes],
+                          intersect(row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1], 
+                                    row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]))
+    sim<- sim[keep.genes, ]
+    
+    # check the logFC for each gene 
+    obs_res<- computeObs(counts(sim), factor(sim$Group), statistic= "os.t")
+    DE.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
+    DE.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
+    
+    
+    neglogFC.DEs <- c(intersect(DE.g1, row.names(obs_res$summary.tb)[obs_res$summary.tb$logFC.g1<0]),
+                      intersect(DE.g2, row.names(obs_res$summary.tb)[obs_res$summary.tb$logFC.g2<0])
+    )
+    # remove true DEs with negative logFC
+    if (length(neglogFC.DEs)>0) {
+      sim<- sim[-match(neglogFC.DEs, row.names(sim)), ]
+      obs_res<- computeObs(counts(sim), factor(sim$Group), statistic= "os.t")
+      DE.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
+      DE.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
+    }
+    
+    dt<-limma::decideTests(obs_res$fit.cont.eb.obs)
+    tp.g1<- row.names(obs_res$fit.cont.eb.obs) %in% DE.g1
+    tp.g2<- row.names(obs_res$fit.cont.eb.obs) %in% DE.g2
+    pdf(paste("seed",rep.seed[cp], paste(as.character(groups_lst[[cp]]*100), 
+                                  collapse = "vs"),"MAplot","pdf",sep="."))
+    limma::plotMA(obs_res$fit.cont.eb.obs, coef=1, status =tp.g1, main = "Group1 true DE", 
+                  legend = "bottomright")
+    limma::plotMA(obs_res$fit.cont.eb.obs, coef=2, status =tp.g2, main = "Group2 true DE",
+                  legend = "bottomright")
+    dtt<- matrix("TN", nrow=nrow(obs_res$fit.cont.eb.obs), ncol=2)
+    dtt<-as.data.frame(dtt)
+    row.names(dtt)<-row.names(obs_res$fit.cont.eb.obs)
+    colnames(dtt)<-c("group1","group2")
+    
+    dtt[intersect(row.names(dt)[dt[,1]==-1], setdiff(row.names(dtt),DE.g1)),1]<-"TN"
+    dtt[intersect(row.names(dt)[dt[,1]==0] , setdiff(row.names(dtt),DE.g1)),1]<-"TN"
+    dtt[intersect(row.names(dt)[dt[,1]==0] , DE.g1),1] <-"FN"
+    dtt[intersect(row.names(dt)[dt[,1]==-1] , DE.g1),1]<-"FN"
+    
+    dtt[intersect(row.names(dt)[dt[,1]==1],DE.g1),1]<-"TP"
+    dtt[intersect(row.names(dt)[dt[,1]==1], setdiff(row.names(dtt),DE.g1)),1]<-"FP"
+    dtt$group1<-factor(dtt$group1, levels = c("TN","FN","TP","FP"))
+    
+    dtt[intersect(row.names(dt)[dt[,2]==-1] , setdiff(row.names(dtt), DE.g2)),2]<-"TN"
+    dtt[intersect(row.names(dt)[dt[,2]==0] , setdiff(row.names(dtt), DE.g2)),2]<-"TN"
+    dtt[intersect(row.names(dt)[dt[,2]==0], DE.g2),2] <-"FN"
+    dtt[intersect(row.names(dt)[dt[,2]==-1], DE.g2),2]<-"FN"
+    
+    dtt[intersect(row.names(dt)[dt[,2]==1],DE.g2),2]<-"TP"
+    dtt[intersect(row.names(dt)[dt[,2]==1] , setdiff(row.names(dtt), DE.g2)),2]<-"FP"
+    dtt$group2<-factor(dtt$group2, levels = c("TN","FN","TP","FP"))
+    
+    #print(levels(df[, 1]))
+    limma::plotMA(obsNRes$fit.cont.eb.obs, coef=1, status = dtt[,1], 
+                  main = "Group 1 (limma)", 
+                  legend = "bottomright",
+                  values=c("TN","FN","TP","FP"),
+                  hl.col = c("black","orange","steelblue","red"), 
+                  hl.cex=c(0.3, 1,1,1))
+    
+    limma::plotMA(obsNRes$fit.cont.eb.obs, coef=2, status = dtt[,2], 
+                  main = "Group 2 (limma)", 
+                  legend = "bottomright",
+                  values=c("TN","FN","TP","FP"),
+                  hl.col = c("black","orange","steelblue","red"), 
+                  hl.cex=c(0.3, 1,1,1))
+    
+    message(paste("simulated data dimension:",paste(as.character(dim(sim)), collapse = ", ")))
+    print("Group1 true DE logFC summary")
+    print(summary(obs_res$summary.tb[DE.g1, "logFC.g1"]))
+    print("Group2 true DE logFC summary")
+    print(summary(obs_res$summary.tb[DE.g2, "logFC.g2"]))
+    print(boxplot(main = paste(as.character(groups_lst[[cp]]*100), collapse = "vs"),
+                  obs_res$summary.tb[DE.g1, "logFC.g1"], 
+                  obs_res$summary.tb[DE.g2, "logFC.g2"], 
+                  names=c(paste("group1\n(#DE=", length(DE.g1),")", sep=""), 
+                          paste("group2\n(#DE=", length(DE.g2),")", sep="")),
+                  ylab = "logFC of true DE")
+          )
+    
+    obsNRes<- computeObsMore(counts(sim), factor(sim$Group), statistic= "os.t", 
+                             cyclic.normalise = TRUE)
+    dt<-limma::decideTests(obsNRes$fit.cont.eb.obs)
+    tp.g1<- row.names(obsNRes$fit.cont.eb.obs) %in% DE.g1
+    tp.g2<- row.names(obsNRes$fit.cont.eb.obs) %in%  DE.g2
+    
+    limma::plotMA(obsNRes$fit.cont.eb.obs, coef=1, 
+                  status =tp.g1, main = "Group1 true DE (normalised)", 
+                  legend = "bottomright")
+    limma::plotMA(obsNRes$fit.cont.eb.obs, coef=2, 
+                  status =tp.g2, main = "Group2 true DE (normalised)",
+                  legend = "bottomright")
+
+    dtt<- matrix("TN", nrow=nrow(obsNRes$fit.cont.eb.obs), ncol=2)
+    dtt<-as.data.frame(dtt)
+    row.names(dtt)<-row.names(obsNRes$fit.cont.eb.obs)
+    colnames(dtt)<-c("group1","group2")
+    
+    dtt[intersect(row.names(dt)[dt[,1]==-1], setdiff(row.names(dtt),DE.g1)),1]<-"TN"
+    dtt[intersect(row.names(dt)[dt[,1]==0] , setdiff(row.names(dtt),DE.g1)),1]<-"TN"
+    dtt[intersect(row.names(dt)[dt[,1]==0] , DE.g1),1] <-"FN"
+    dtt[intersect(row.names(dt)[dt[,1]==-1] , DE.g1),1]<-"FN"
+    
+    dtt[intersect(row.names(dt)[dt[,1]==1],DE.g1),1]<-"TP"
+    dtt[intersect(row.names(dt)[dt[,1]==1], setdiff(row.names(dtt),DE.g1)),1]<-"FP"
+    dtt$group1<-factor(dtt$group1, levels = c("TN","FN","TP","FP"))
+    
+    dtt[intersect(row.names(dt)[dt[,2]==-1] , setdiff(row.names(dtt), DE.g2)),2]<-"TN"
+    dtt[intersect(row.names(dt)[dt[,2]==0] , setdiff(row.names(dtt), DE.g2)),2]<-"TN"
+    dtt[intersect(row.names(dt)[dt[,2]==0], DE.g2),2] <-"FN"
+    dtt[intersect(row.names(dt)[dt[,2]==-1], DE.g2),2]<-"FN"
+    
+    dtt[intersect(row.names(dt)[dt[,2]==1],DE.g2),2]<-"TP"
+    dtt[intersect(row.names(dt)[dt[,2]==1] , setdiff(row.names(dtt), DE.g2)),2]<-"FP"
+    dtt$group2<-factor(dtt$group2, levels = c("TN","FN","TP","FP"))
+    
+    #print(levels(df[, 1]))
+    limma::plotMA(obsNRes$fit.cont.eb.obs, coef=1, status = dtt[,1], 
+                  main = "Group 1 (limma)", 
+                  legend = "bottomright",
+                  values=c("TN","FN","TP","FP"),
+                  hl.col = c("black","orange","steelblue","red"), 
+                  hl.cex=c(0.3, 1,1,1))
+    
+    limma::plotMA(obsNRes$fit.cont.eb.obs, coef=2, status = dtt[,2], 
+                  main = "Group 2 (limma)", 
+                  legend = "bottomright",
+                  values=c("TN","FN","TP","FP"),
+                  hl.col = c("black","orange","steelblue","red"), 
+                  hl.cex=c(0.3, 1,1,1))
+    
+    dev.off()
+  }
+}
+
+x<-rpois(20,2)
+y<-rpois(15,2)
+df<-data.frame(X=c(x,y),Grp=rep(c("x","y"),times=c(20,15)))
+df
+```
+
+
+
+
+
+
+```{r}
+groups_lst<- list(c(0.01, 0.99),
+                  c(0.05, 0.95),
+                  c(0.1, 0.9),
+                  c(0.2, 0.8),
+                  c(0.3, 0.7),
+                  c(0.4, 0.6),
+                  c(0.5, 0.5)
+                  )
+
+# 1:20 runs -> 20run_7cp_g22098
+# set.seed(22098)
+# rep.times<-20
+# rep.seed <- sample(x = seed.number.cp[rep]:seed.number.cp[rep]+8900, 
+#                         size = length(groups_lst), replace = FALSE)
+# 20:50 runs -> 30run_7cp_g23098
+#set.seed(23098)
+#rep.times<-30
+#rep.seed <- sample(x = seed.number.cp[rep]:seed.number.cp[rep]+93, 
+#                         size = length(groups_lst), replace = FALSE)
+set.seed(23098)
+rep.times<-30
+seed.number.cp <- sample(x = 100:10000, size = rep.times, replace = FALSE)
+
+# rm(adj.p, adj.df)
+tic.clearlog()
+tic(paste(rep.times, "repeated rounds total time"))
+for (rep in 1: rep.times){
+  set.seed(seed.number.cp[rep])
+  rep.seed <- sample(x = seed.number.cp[rep]:seed.number.cp[rep]+ 93, 
+                         size = length(groups_lst), replace = FALSE)
+  print(paste("repeated round", rep, "started"))
+  tic(paste("repeated round", rep, "time"))
+  for (cp in 1:length(groups_lst)){
+    sim <- splatSimulate(curr_params, method = "groups", nGenes = 5000,
+                         batchCells = 1000, dropout.type = "none", out.prob = 0, 
+                         de.prob = c(0.02, 0.02),de.downProb = c(0, 0),
+                         group.prob = groups_lst[[cp]],
+                         #seed = seed.number.cp[cp], 
+                         seed = rep.seed[cp], 
+                         de.facLoc = c(1.1, 1.1),
+                         de.facScale = c(0.5, 0.5),
+                         verbose = FALSE
+                         )
+    
+    ############################################################################
+    # QC 
+    # remove lowly expressed genes 
+    numzero.genes <- rowSums(counts(sim)==0)
+    keep.genes <- numzero.genes < (ncol(counts(sim))-min(groups_lst[[cp]][1]*1000, 100))
+    keep.genes <- setdiff(row.names(sim)[keep.genes],
+                          intersect(row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1], 
+                                    row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]))
+    sim<- sim[keep.genes, ]
+    
+    # check the logFC for each gene 
+    obs_res<- computeObs(counts(sim), factor(sim$Group), statistic= "os.t")
+    DE.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
+    DE.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
+    
+    neglogFC.DEs <- c(intersect(DE.g1, row.names(obs_res$summary.tb)[obs_res$summary.tb$logFC.g1<0]),
+                      intersect(DE.g2, row.names(obs_res$summary.tb)[obs_res$summary.tb$logFC.g2<0])
+    )
+    # remove true DEs with negative logFC
+    if (length(neglogFC.DEs)>0) {
+      sim<- sim[-match(neglogFC.DEs, row.names(sim)), ]
+    }
+    message(paste("simulated data dimension:",paste(as.character(dim(sim)), collapse = ", ")))
+    
+    # set the identifier for the plots 
+    prefix<-paste("s",rep.seed[cp], paste(as.character(table(sim$Group)),collapse="_"), sep="_")
+    
+    ############################################################################
+    # run permutation for all stats
+    n.cores=parallel::detectCores()-8
+    if (cp == 1){
+      perm.size = 10000
+    }else{
+      perm.size = 4000
+    }
+    
+    #setwd("~/Desktop/Data Science Research Project/MDSresearchproject/50run_7cp/20run_7cp_g22098")
+    setwd("/Volumes/Expansion/Data Science Research Project/MDSresearchproject/50run_7cp/30run_7cp_g23098")
+    os.treatt.res<- readRDS(paste(prefix, "os.treatt.Rds", sep="."))
+    ############################################################################
+    # creat the result table 
+    #stat.lst<- c("os.t","os.treatt", "lfc.p","ts.modt", "os.modt")
+    logFC.vals<- c(0.02, 0.05,0.1, 0.2, 0.4, 0.6, 0.8)
+    if (exists("adj.df") == FALSE ){
+      cols.n<- c("group","cell.type","num.cells", "test.name", "num.true.upreg","num.upreg",
+                 "TP", "precision", "sensitivity","F1","overlap","TP.overlap","cutoff","perm.size",
+                 "seed.number","AUC","statistic","logFC.val")
+      adj.p<- setNames(data.frame(matrix(ncol = length(cols.n), nrow = 0)),cols.n)
+    }
+    auc.values <- plotComparison(sim, perm.size = perm.size,
+                                 plt.main = paste(prefix,"os.treatt.res","pdf", sep="."), 
+                                 result=os.treatt.res)
+    logFC.df<- as.data.frame(cbind(os.treatt.res$result.table[[1]][, 2],
+                                   os.treatt.res$result.table[[2]][, 2]))
+    row.names(logFC.df)<-row.names(os.treatt.res$obs.stat)
+    colnames(logFC.df)<-c("logFC.g1","logFC.g2")
+    trueDE<-os.treatt.res$true.upreg
+    for (i in 1:length(logFC.vals)){
+
+      trueDE = list(intersect(row.names(logFC.df[logFC.df$logFC.g1 > logFC.vals[i], ]),
+                              trueDE[[1]]), 
+                    intersect(row.names(logFC.df[logFC.df$logFC.g2 > logFC.vals[i], ]),
+                              trueDE[[2]]))
+      adj.df<-computeSummary3simple(os.treatt.res$obs.pval.adj, os.treatt.res$perm.pval.adj,
+                                    adj = "adjusted",
+                                    true.upreg = trueDE, 
+                                    cell_num=as.vector(table(sim$Group)), 
+                                    main.describe = paste(as.character(table(sim$Group)),collapse="_"), 
+                                    seed.number=rep.seed[cp],perm.size=perm.size,
+                                    logFC.df=logFC.df,logFC.cutoff = logFC.vals[i],
+                                    auc.values=auc.values, statistic = "os.treatt", 
+                                    combined=FALSE)
+      adj.df$logFC.val<-logFC.vals[i]
+      adj.p<- rbind(adj.p, adj.df)
+      }
+    
+  }
+  print(paste("round", rep,"finished"))
+  toc(log = T)
+}
+toc(log = T)
+saveRDS(adj.p, "tt_3lfc.Rds")
+#adj.p$statistic<-gsub(".res","", adj.p$statistic)
+adj.p$group<- factor(adj.p$group)
+adj.p[adj.p$statistic=="lfc.p"&adj.p$test.name=="limma","statistic"]<-"os.t"
+
+adj.p[adj.p$TP==0,"precision"]<-0
+adj.p[adj.p$TP==0,"sensitivity"]<-0
+adj.p[adj.p$TP==0,"F1"]<-0
+
+adj.p$group <- factor(adj.p$group,levels = as.vector(unique(adj.p$group)))
+adj.p$category <- paste(adj.p$test.name, adj.p$statistic)
+gr<- unlist(groups_lst)*100
+
+# combined=FALSE
+cp.ft<-as.vector(rep(tapply(gr, as.character(gl(length(gr), 2, length(gr))),   
+                                FUN= paste, collapse='% : '), 1))
+adj.p$cp<- rep(paste("#group1 : #group2 = ",paste(cp.ft, "%",sep=""), sep=""),times=50,each = 28)
+adj.p$cp<-factor(adj.p$cp, 
+                 levels = c("#group1 : #group2 = 1% : 99%",
+                            "#group1 : #group2 = 5% : 95%",
+                            "#group1 : #group2 = 10% : 90%",
+                            "#group1 : #group2 = 20% : 80%",
+                            "#group1 : #group2 = 30% : 70%",
+                            "#group1 : #group2 = 40% : 60%",
+                            "#group1 : #group2 = 50% : 50%")
+                 )
+
+adj.p$logFC.val<-as.factor(adj.p$logFC.val)
+df<-adj.p[adj.p$cp %in% cps[c(2,7)], ]
+#clrs<-c("lightskyblue1","lightskyblue2","steelblue1","steelblue2","steelblue3","steelblue4",
+#        "orange1","orange2","tan1","tan2","tan3", "tan4")
+clrs<-c("lightskyblue2","tan2")
+sensitivity<-ggplot(data = df, 
+                    aes(x = factor(logFC.val), y = sensitivity,fill = factor(category)))+
+  geom_boxplot(size=0.2, width=0.8)+#, position=position_dodge(1))+
+  geom_point(position=position_jitterdodge(jitter.width=0.2, jitter.height=0), 
+             size=0.2, color = "black", alpha=0.9)+
+  facet_grid(cell.type~cp, scales='free_x', space='free_x')+
+  theme(#axis.text.x = element_text(angle=90), 
+        legend.title=element_blank(),
+        #axis.ticks.x=element_blank(), 
+        #axis.text.x.bottom =element_blank(), 
+        axis.title.x=element_blank(),
+        axis.title.y=element_text(size=20), 
+        panel.spacing = unit(0.5, "lines"), 
+        legend.position="top",
+        legend.text=element_text(margin=margin(r=0.3,unit="cm"), size=20),
+        strip.text = element_text(size = rel(1.3)))+
+  guides(fill = guide_legend(nrow=1, ncol =2))+
+ # xlab("logFC threshold value")+
+  ylab("sensitivity")+ 
+  scale_y_continuous(limits=c(0.5,1), oob = rescale_none)+
+  scale_fill_manual(values=clrs)
+
+ggsave("sensitivity.pdf", width = 20, height=8)
+
+precision<-ggplot(data = df, 
+                    aes(x = factor(logFC.val), y = precision,fill = category))+
+  geom_boxplot(size=0.2, width=0.8)+#, position=position_dodge(1))+
+  geom_point(position=position_jitterdodge(jitter.width=0.2, jitter.height=0), 
+             size=0.2, color = "black", alpha=0.9)+
+  facet_grid(cell.type~cp, scales='free_x', space='free_x')+
+  theme(#axis.text.x = element_text(angle=90), 
+        legend.title=element_blank(),
+        #axis.ticks.x=element_blank(), 
+        #axis.text.x.bottom =element_blank(), 
+        axis.title.x=element_blank(),
+        axis.title.y=element_text(size=20), 
+        panel.spacing = unit(0.5, "lines"), 
+        legend.position="top",
+        legend.text=element_text(margin=margin(r=0.3,unit="cm"), size=20),
+        strip.text = element_text(size = rel(1.3)))+
+  guides(fill = guide_legend(nrow=1, ncol =2))+
+  ylab("precision")+ 
+  scale_y_continuous(limits=c(0.7,1), oob = rescale_none)+
+  scale_fill_manual(values=clrs)
+ggsave("precision.pdf", width = 20, height=8)
+
+f1<-ggplot(data = df, aes(x = factor(logFC.val), y = F1,fill = category))+
+  geom_boxplot(size=0.2, width=0.8)+#, position=position_dodge(1))+
+  geom_point(position=position_jitterdodge(jitter.width=0.2, jitter.height=0), 
+             size=0.2, color = "black", alpha=0.9)+
+  facet_grid(cell.type~cp, scales='free_x', space='free_x')+
+  theme(#axis.text.x = element_text(angle=90), 
+        legend.title=element_blank(),
+        #axis.ticks.x=element_blank(), 
+        #axis.text.x.bottom =element_blank(), 
+        axis.title.x=element_blank(),
+        axis.title.y=element_text(size=20), 
+        panel.spacing = unit(0.5, "lines"), 
+        legend.position="top",
+        legend.text=element_text(margin=margin(r=0.3,unit="cm"), size=20),
+        strip.text = element_text(size = rel(1.3)))+
+  guides(fill = guide_legend(nrow=2, ncol =length(clrs)/2))+
+  xlab("logFC threshold value")+
+  ylab("F1 score")+ 
+  scale_y_continuous(limits=c(0.65,1), oob = rescale_none)+
+  scale_fill_manual(values=clrs)
+ggsave("f1.pdf", width = 20, height=8)
+ggarrange(precision, sensitivity, f1, heights = c(3,3,3), ncol = 1,  nrow = 3,
+          legend="top", common.legend = T,align="hv")
+ggsave(paste("tt.varythreshold", "pdf",sep="."), width = 12, height=8)
+```
+
+
+
+
+
 
 
 #######################################
@@ -1150,6 +1725,7 @@ ggsave("simulation_result.pdf", width = 23, height=12)
 
 
 ```
+
 ```{r}
 
 ```
