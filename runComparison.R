@@ -1,14 +1,21 @@
-runComparison<-function(sim, perm.size, statistic = "os.t", lfc.cutoff=0.1, n.cores=1){
+runComparison<-function(sim, perm.size, statistic = "os.t", sim_perm_arrays,
+                               lfc.cutoff=0.1, n.cores=1, true.upreg, ){
   message(paste("Statistic = ", statistic))
   obs_res<- computeObs(counts(sim), factor(sim$Group),statistic= statistic, lfc.cutoff=lfc.cutoff)
   obs.stat<- obs_res$obs.stat
   obs.pval<- obs_res$obs.pval
   obs.pval<- as.data.frame(obs.pval)
-
+  tm1 <- system.time(
+    {
+      obs_res<- computeObs(counts(sim), factor(sim$Group),statistic= statistic, lfc.cutoff=lfc.cutoff)
+    })
+  
   if (n.cores>1){
     message(paste("Running", perm.size, "permutation with", n.cores, "cores in parallel"))
+    message(paste("Estimated waiting time: ", perm.size*tm1/n.cores))
   }else{
     message(paste("Running", perm.size, "permutation in sequential"))
+    message(paste("Estimated waiting time: ", perm.size*tm1))
   }
   # run permutation
   #sim_perm_arrays <- tPerm(counts(sim), sim$Group, perm.size=perm.size, 
@@ -56,11 +63,11 @@ runComparison<-function(sim, perm.size, statistic = "os.t", lfc.cutoff=0.1, n.co
   rownames(obs.pval) <- row.names(counts(sim))
   colnames(obs.pval) <- sim_perm_arrays$ct.names
   
-  true.sup.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
-  true.sup.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
-  true.sup.g1<- intersect(true.sup.g1, row.names(sim))
-  true.sup.g2<- intersect(true.sup.g2, row.names(sim))
-  true.upreg = list(true.sup.g1, true.sup.g2)
+  #true.sup.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
+  #true.sup.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
+  #true.sup.g1<- intersect(true.sup.g1, row.names(sim))
+  #true.sup.g2<- intersect(true.sup.g2, row.names(sim))
+  #true.upreg = list(true.sup.g1, true.sup.g2)
   
   group1.df<- obs_res$summary.tb[,c("AveExpr", "logFC.g1")] 
   group2.df<- obs_res$summary.tb[,c("AveExpr", "logFC.g2")] 

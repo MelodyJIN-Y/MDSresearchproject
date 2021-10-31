@@ -1,6 +1,6 @@
 runPermuation<-function(cm, group, perm.size, statistic = "os.t", 
                              lfc.cutoff=0.1, n.cores=1, perm.arrays = NULL, 
-                        normalise=FALSE){
+                        normalise=FALSE, seed_value=97){
   message(paste("Statistic = ", statistic))
   #obs_res<- computeObservation(cm, factor(group),statistic= statistic, lfc.cutoff=lfc.cutoff)
   tm1 <- system.time(
@@ -24,7 +24,7 @@ runPermuation<-function(cm, group, perm.size, statistic = "os.t",
     # permutation stats
     perm_stat <- pPermutation(cm, group, perm.size=perm.size, 
                               statistic= statistic,lfc.cutoff=lfc.cutoff, 
-                              n.cores=n.cores)
+                              n.cores=n.cores, seed_value=seed_value)
     # permutation stats
     perm.arrays<- perm_stat$t.perm
   }

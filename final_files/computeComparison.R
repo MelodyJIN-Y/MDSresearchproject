@@ -31,8 +31,8 @@ computeComparison<- function(obs.p, perm.p, marker.genes,
       summ[i, "num.cells"]<- cell_num[i]
       summ[i+ncol(obs.p), "num.cells"]<- cell_num[i]
       
-      summ[i, "num.true.marker"]<- length(marker.genes[[colnames(obs.p)[i]]])
-      summ[i+ncol(obs.p), "num.true.marker"]<- length(marker.genes[[colnames(obs.p)[i]]])
+      summ[i, "num.true.marker"]<- length(unique.marker.genes[[colnames(obs.p)[i]]])
+      summ[i+ncol(obs.p), "num.true.marker"]<- length(unique.marker.genes[[colnames(obs.p)[i]]])
       
       # positive genes 
       limma_upreg_genes =  row.names(obs.p[which(obs.p[,i] < pvalue.cutoff),])
@@ -48,7 +48,7 @@ computeComparison<- function(obs.p, perm.p, marker.genes,
       summ[i, "overlap"]<-overlap
       summ[i+ncol(obs.p), "overlap"]<- overlap
       
-      if (is.null(marker.genes) ==TRUE){
+      if (is.null(marker.genes[[colnames(obs.p)[i]]]) ==TRUE){
         
         summ[i, c("TP", "precision","sensitivity","F1","TP.overlap","AUC")]<- 0
         summ[i+ncol(obs.p), c("TP", "precision","sensitivity","F1","TP.overlap","AUC")]<- 0

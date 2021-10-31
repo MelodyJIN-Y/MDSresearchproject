@@ -2,7 +2,7 @@
 # Input
 # 
 pPermutation<- function(cm, groups, perm.size = 1000, statistic = "os.t",  
-                 lfc.cutoff=0.1, n.cores=1){
+                 lfc.cutoff=0.1, n.cores=1, seed_value=97){
   
   logcounts.all <- lognormCounts(cm, log=TRUE, prior.count=0.5) 
   all.bct <- factor(groups)
@@ -17,13 +17,17 @@ pPermutation<- function(cm, groups, perm.size = 1000, statistic = "os.t",
   tic.clearlog()
   tic(paste(perm.size, "permutation total time"))
   doParallel::registerDoParallel(cl = my.cluster)
+  set.seed(seed_value)
+  sds<- sample(1:200000, size= perm.size, replace = T)
   # for (i in 1:perm.size) {
   t.perm.array<-foreach (i = 1:perm.size) %dopar% {
     # permutate the all.bct only 
+    set.seed(sds[i])
     all.bct.shuffled <- sample(all.bct, replace = FALSE, size =length(all.bct))
     
     #########################
-    # Limma DE framework written by Belinda Phipson 
+    # Limma DE framework written by Belinda Phipson
+    
     design <- model.matrix(~0+all.bct.shuffled)
     colnames(design)[1:(length(levels(all.bct.shuffled)))] <- levels(all.bct.shuffled)
     mycont <- matrix(0,

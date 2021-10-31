@@ -1,4 +1,11 @@
-summaryPlots<- function(plt.title, result, markers, obs, statistic){
+# This is a helper function which will generate MA and ROC plots
+# Input:  plt.title = file name, a string
+#         result = An object returned by function runPermuation(), a list
+#         obs = An object returned by function computeObservation() ,  a list
+#         statistic = used statistic, a string
+#         hlins = a number used to add a horizontal line to the MA plot
+
+summaryPlots<- function(plt.title, result, markers, obs, statistic, hlins = 0){
   pdf(paste(plt.title, "pdf", sep="."))
   auc.values<- as.data.frame(matrix(0, nrow=2, ncol=ncol(result$obs.pval)+1))
   colnames(auc.values)<- c("test", colnames(result$obs.pval))
@@ -6,65 +13,6 @@ summaryPlots<- function(plt.title, result, markers, obs, statistic){
   for (ct in 1:ncol(result$obs.pval)){
     curr.ct.name<- colnames(result$obs.pval)[ct]
     if (curr.ct.name %in% names(markers)){
-      # cumsum plot
-      #curr.ct.name<- colnames(result$obs.pval)[ct]
-      #pv.obs<-as.data.frame(matrix(0, ncol = 4, nrow = nrow(result$obs.pval)))
-      #pv.perm<- as.data.frame(matrix(0, ncol = 4, nrow = nrow(result$obs.pval)))
-      #pv.obs[, 1]<- result$obs.pval[, ct]
-      #pv.perm[, 1]<- result$perm.pval[, ct]
-      #pv.obs[, 2]<- 0 # limma TP
-      #pv.perm[, 2]<- 0 # permutation TP
-      #pv.obs[, 3]<- 0 # limma FP
-      #pv.perm[, 3]<- 0 # permutation FP 
-      
-      #pv.obs[, 4]<- 0 # limma t statistic
-      #pv.perm[, 4]<- 0 # permutation t statistic
-     
-       #pv.obs[match(intersect(markers[[curr.ct.name]],row.names(result$obs.pval)), 
-      #             row.names(result$obs.pval)) ,2]<- 1
-      #pv.perm[match(intersect(markers[[curr.ct.name]],row.names(result$perm.pval)), 
-      #              row.names(result$obs.pval)),2]<- 1
-      #pv.obs[match(setdiff(row.names(result$obs.pval)[result$obs.pval[,ct]< 0.05], 
-      #                     markers[[curr.ct.name]]),
-      #             row.names(result$perm.pval)),3]<- 1
-      #pv.perm[match(setdiff(row.names(result$perm.pval)[result$perm.pval[,ct]< 0.05],
-      #                      markers[[curr.ct.name]]),
-      #              row.names(result$perm.pval)),3]<- 1
-      
-      #pv.perm[match(row.names(obs$obs.stat),
-      #              row.names(result$perm.pval)),4]<- obs$obs.stat[match(row.names(obs$obs.stat),
-      #                                                          row.names(result$perm.pval)), curr.ct.name]
-      
-      #pv.obs[match(row.names(obs$obs.stat),
-      #              row.names(result$obs.pval)),4]<- obs$obs.stat[match(row.names(obs$obs.stat),
-      #                                                          row.names(result$obs.pval)), curr.ct.name]
-      
-      # sort by p-value, and then by t-statistic
-      #pv.obs<- pv.obs[order(pv.obs[,1], -pv.obs[,4]), ]
-      #pv.perm<- pv.perm[order(pv.perm[,1], -pv.perm[,4]), ]
-      #plot(cumsum(pv.obs[1:500,2]), type="s",
-      #     main = paste(curr.ct.name,"cells",sep=" "), 
-      #     ylab = "cumulative number of TP",lwd=2)
-      #lines(cumsum(pv.perm[1:500,2]), type="s",col = "blue", lwd=2)
-      #abline(a=0, b=1, col="red")
-      #legend(x = "bottomright",          
-      #       legend = c("limma", "permutation"),
-      #       col = c("black", "blue"),           
-      #       lwd = 2)    
-
-      
-    #  pv.obs<- pv.obs[order(pv.obs[,1], -pv.obs[,4]), ]
-    #  pv.perm<- pv.perm[order(pv.perm[,1], -pv.perm[,4]), ]
-    #  plot(cumsum(pv.obs[1:200,3]), type="s",
-    #       main = paste(curr.ct.name,"cells",sep=" "), 
-    #       ylab = "cumulative number of FP",lwd=2)
-    #  lines(cumsum(pv.perm[1:200,3]), type="s",col = "blue",lwd=2)
-      #abline(a=0, b=1, col="red")
-    #  legend(x = "topleft",          
-    #         legend = c("limma", "permutation"),
-    #         col = c("black", "blue"),           
-    #         lwd = 2)  
-      ################
       
       # MA plot
       curr_df<- data.frame(cbind("Amean"=obs$fit.cont.eb.obs$Amean, 
@@ -99,24 +47,27 @@ summaryPlots<- function(plt.title, result, markers, obs, statistic){
                                   row.names(result$obs.pval))]<-"FN"
       curr_df$limma.pvalue<-as.numeric(curr_df$limma.pvalue)
       curr_df$perm.pvalue<-as.numeric(curr_df$perm.pvalue)
-      breaks<-c(0.1,0.2, 0.3, 0.4, 0.5, 0.7, 0.95, 0.99)
-      labels<- c("0.9","0.8","0.7","0.6", "0.5", "0.3", "0.05", "0.01" )
+     # breaks<-c(0.1,0.2, 0.3, 0.4, 0.5, 0.7, 0.95, 0.99)
+    #  labels<- c("0.9","0.8","0.7","0.6", "0.5", "0.3", "0.05", "0.01" )
       limma.p<- ggplot(data=curr_df, 
                        aes(x =Amean, y=coef, color = limma.category, 
                            shape= limma.category, size=limma.category
                        ))+
         geom_point(position=position_jitterdodge(jitter.width=0, jitter.height=0.002), alpha=0.8)+
-        geom_hline(yintercept=0, size=0.5, color = "black" )+
+        geom_hline(yintercept=hlins, size=1, color = "darkgreen")+
+        geom_hline(yintercept=0, size=1, color = "black" )+
         scale_color_manual(values = c("black","royalblue2","red","goldenrod2"),drop=F)+
+        geom_text(aes(-1.5,hlins,label = paste(hlins),hjust=1,  vjust = -0.5), size=3, color="darkgreen")+
         theme(
           legend.title=element_blank(),
           axis.title.x=element_text(size=15),
           axis.title.y=element_text(size=15), 
           panel.spacing = unit(0.5, "lines"), 
-          legend.position="none",
+          legend.position="bottom",
           legend.text=element_text(margin=margin(r=0.3,unit="cm"), size=15))+
         xlab("Average log-expression")+ylab("log-fold-change")+
         ggtitle(paste("limma", statistic))+
+        scale_y_continuous(breaks=c(-1, -2, 0, 1, 2 ))+
         #scale_color_gradientn(name="Legend 2",
         #                     #labels=comma, 
         #                     limits=c(0, 1),
@@ -131,7 +82,9 @@ summaryPlots<- function(plt.title, result, markers, obs, statistic){
                           shape= perm.category,size=perm.category
                           ))+
         geom_point(position=position_jitterdodge(jitter.width=0, jitter.height=0.002), alpha=0.9)+
-        geom_hline(yintercept=0, size=0.5, color = "black")+
+        geom_hline(yintercept=hlins, size=1, color = "darkgreen")+
+        geom_hline(yintercept=0, size=1, color = "black" )+
+        geom_text(aes(-1.5,hlins,label = paste(hlins),hjust=1,  vjust = -0.5), size=3, color="darkgreen")+
         scale_color_manual(values = c("black","royalblue2","red","goldenrod2"),drop=F)+
         ggtitle(paste("permutation", statistic))+
         theme(
@@ -139,21 +92,22 @@ summaryPlots<- function(plt.title, result, markers, obs, statistic){
           axis.title.x=element_text(size=15),
           axis.title.y=element_text(size=15), 
           panel.spacing = unit(0.5, "lines"), 
-          legend.position="none",
+          legend.position="bottom",
           legend.text=element_text(margin=margin(r=0.3,unit="cm"), size=15))+
         xlab("Average log-expression")+ylab("log-fold-change")+
         scale_shape_manual(values=c(20, 8, 15, 17),drop=F)+
+        scale_y_continuous(breaks=c(-1, -2, 0, 1, 2 ))+
         scale_size_manual(values=c(0.1, 1.5,1.5,1.5),drop=F)
-      pl<- ggarrange(limma.p+xlab(""), perm.p+xlab(""),  ncol =1,  nrow = 2,
+      pl<- ggarrange(limma.p, perm.p,  ncol =1,  nrow = 2,
                      legend="bottom",align="v", common.legend=T)
       plot(annotate_figure(pl, 
-                      top = text_grob(paste(colnames(res$obs.stat)[ct], "cells"), 
+                      top = text_grob(paste(curr.ct.name, "cells"), 
                                       color = "black", face = "bold", size = 14)))
       
-      #AUC plot
+      # AUC plot
       resp=list()
       
-        resp.g <- as.vector(ifelse(test=(row.names(result$obs.pval) %in% markers[[curr.ct.name]]),  
+        resp.g <- as.vector(ifelse(test=(row.names(result$perm.pval.adj) %in% markers[[curr.ct.name]]),  
                                    yes=1, no=0))
         resp[[curr.ct.name]]<-resp.g
 
@@ -228,8 +182,6 @@ summaryPlots<- function(plt.title, result, markers, obs, statistic){
                                       color=true.marker.genes, 
                                       size=true.marker.genes))+
                geom_point(
-                          #position=position_jitterdodge(jitter.width=0, 
-                          #                              jitter.height=0.001), 
                            alpha=0.7)+
                ylab("permutation adjusted pvalue")+
                theme(legend.position= "bottom")+
@@ -243,44 +195,7 @@ summaryPlots<- function(plt.title, result, markers, obs, statistic){
           scale_size_manual(values = c(1, 2), drop=F))
         
     
-       # limma.pval <- sort(obs$obs.pval[,ct])
-      #  expected.limma.pval <- 1:length(limma.pval)/length(limma.pval)
-
-        #perm.pval <- sort(result$perm.pval[,ct])
-        #expected.perm.pval <- 1:length(perm.pval)/length(perm.pval)
-
-        #pv_df<- data.frame(expected = expected.perm.pval, pval = perm.pval, 
-        #                   true.DE=FALSE)
-        #pv_df[match(intersect(markers[[curr.ct.name]], row.names(pv_df)), 
-        #            row.names(pv_df)), "true.DE"]=TRUE
-        #plot(ggplot(pv_df, aes(x=-log10(expected), y=-log10(pval), color=true.DE)) + 
-        #  geom_point( size = 1, alpha=0.7) + 
-        #  scale_color_manual(values = c("black","steelblue"))+
-        #    geom_line(aes(x=-log10(expected), y=-log10(expected)),
-        #              linetype="dashed", color = "black") +
-        #  labs(y=expression(Permutation~~Observed~~-log[10](italic(p))), 
-        #       x=expression(Expected~~-log[10](italic(p))),
-        #       color="true marker genes") +
-        #    ggtitle(paste(curr.ct.name,"cells",sep=" "))+
-        #  theme(legend.position="bottom")
-        #  )
-        
-        #pv_df<- data.frame(expected = expected.limma.pval, pval = limma.pval, 
-        #                   true.DE=FALSE)
-        #pv_df[match(intersect(markers[[curr.ct.name]], row.names(pv_df)), 
-        #            row.names(pv_df)), "true.DE"]=TRUE
-        #plot(ggplot(pv_df, aes(x=-log10(expected), y=-log10(pval), color=true.DE)) + 
-        #       geom_point( size = 1, alpha=0.7) + 
-        #       scale_color_manual(values = c("black","steelblue"))+
-        #       geom_line(aes(x=-log10(expected), y=-log10(expected)),
-        #                 linetype="dashed", color = "black") +
-        #       labs(y=expression(Limma~~Observed~~-log[10](italic(p))), 
-        #            x=expression(Expected~~-log[10](italic(p))),
-        #            color="true marker genes") +
-        #       ggtitle(paste(curr.ct.name,"cells",sep=" "))+
-        #       theme(legend.position="bottom")
-        #)
-      
+       
     }else{
       
       plot(obs$fit.cont.eb.obs$Amean, obs$fit.cont.eb.obs$coefficients[,ct], 
@@ -307,33 +222,6 @@ summaryPlots<- function(plt.title, result, markers, obs, statistic){
              col = c("steelblue", "black"),           
              lwd = 2) 
 
-      
-      #perm.pval <- sort(result$perm.pval[,ct])
-      #expected.perm.pval <- 1:length(perm.pval)/length(perm.pval)
-      
-      #pv_df<- data.frame(expected = expected.perm.pval, pval = perm.pval)
-      #plot(ggplot(pv_df, aes(x=-log10(expected), y=-log10(pval))) + 
-      #       geom_point( size = 1, alpha=0.7) + 
-      #       scale_color_manual(values = c("black","steelblue"))+
-      #       geom_line(aes(x=-log10(expected), y=-log10(expected)),
-      #                 linetype="dashed", color = "black") +
-      #       ggtitle(paste(curr.ct.name,"cells",sep=" "))+
-      #       labs(y=expression(Permutation~~Observed~~-log[10](italic(p))), 
-      #            x=expression(Expected~~-log[10](italic(p)))) 
-      #)
-      
-      #limma.pval <- sort(obs$obs.pval[,ct])
-      #expected.limma.pval <- 1:length(limma.pval)/length(limma.pval)
-      #pv_df<- data.frame(expected = expected.limma.pval, pval = limma.pval)
-      #plot(ggplot(pv_df, aes(x=-log10(expected), y=-log10(pval))) + 
-      #       geom_point( size = 1, alpha=0.7) + 
-      #       scale_color_manual(values = c("black","steelblue"))+
-      #       geom_line(aes(x=-log10(expected), y=-log10(expected)),
-      #                 linetype="dashed", color = "black") +
-      #       ggtitle(paste(curr.ct.name,"cells",sep=" "))+
-      #       labs(y=expression(Limma~~Observed~~-log[10](italic(p))), 
-      #            x=expression(Expected~~-log[10](italic(p)))) 
-      #)
       
     }
     
