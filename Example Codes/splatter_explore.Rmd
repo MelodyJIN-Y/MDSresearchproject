@@ -1,0 +1,245 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+
+library(Seurat)
+library(dplyr)
+library(SingleCellExperiment)
+library(scater)
+library(splatter)
+library(reshape2)
+library(pROC)
+library(ggforce) 
+library(limma)
+
+pbmc.data<- readRDS("pbmc_pooled_sex.Rds")
+cm<- pbmc.data@assays$RNA@counts
+table(pbmc.data$individual)
+
+cm<- pbmc.data[, pbmc.data$individual == "689_690"]@assays$RNA@counts
+dim(cm) # 32738  3402 (1789+1613) $32738  4907
+
+pbmc <- CreateSeuratObject(counts = cm,min.features = 500, min.cells = 5)
+
+
+cm<-pbmc@assays$RNA@counts
+ann.all<- readRDS("allpbmc.Rds")
+numzero.genes <- rowSums(cm==0)
+keep.genes <- numzero.genes < (ncol(cm)-10)
+all.keep <- cm[keep.genes,]
+ann.keep.all <- ann.all[keep.genes,]
+cm.processed<- all.keep
+```
+
+
+Check the estimated parameters 
+```{r}
+cellsCD4T <- colnames(cm.processed[,pbmc.data[,colnames(cm.processed)]$predicted.celltype.l1 =="CD4 T"])
+cm.CD4T<- cm.processed[, match(cellsCD4T, colnames(cm.processed))]
+metadata <- data.frame(cell_type = pbmc.data[row.names(cm.CD4T),colnames(cm.CD4T)]$predicted.celltype.l1,
+                       ind = '689_690')
+sce.CD4T <- SingleCellExperiment(list(counts=as.matrix(cm.CD4T)),colData=metadata)
+
+params.CD4T <- newSplatParams()
+params.CD4T <- splatEstimate(sce.CD4T,params = params.CD4T)
+
+
+
+cellsNK <- colnames(cm.processed[,pbmc.data[,colnames(cm.processed)]$predicted.celltype.l1 =="NK"])
+cm.NK<- cm.processed[, match(cellsNK, colnames(cm.processed))]
+metadata <- data.frame(cell_type = pbmc.data[row.names(cm.NK),colnames(cm.NK)]$predicted.celltype.l1,
+                       ind = '689_690')
+sce.NK <- SingleCellExperiment(list(counts=as.matrix(cm.NK)),colData=metadata)
+
+params.NK <- newSplatParams()
+params.NK <- splatEstimate(sce.NK,params = params.NK)
+
+
+
+params.CD4T
+params.NK
+```
+
+
+
+
+Comparing simulations and real data
+```{r}
+sim.NK <- splatSimulate(params.NK,nGenes = 5000,
+                     batchCells = 1000, #dropout.type = "none", out.prob = 0, 
+                     #de.prob =0.1,de.downProb = 0.04,
+                     seed =  8673, 
+                     #de.facLoc = 0.6,
+                     #de.facScale =0.1,
+                     verbose = FALSE)
+
+sim.CD4T <- splatSimulate(params.CD4T, nGenes = 5000,
+                     batchCells = 1000, #dropout.type = "none", out.prob = 0, 
+                     #de.prob = 0.01,de.downProb = 0.2,
+                     seed =  9798, 
+                     #de.facLoc = 0.2,
+                     #de.facScale =0.1,
+                     verbose = FALSE)
+
+comp<- compareSCEs(list(CD4T.real = sce.CD4T, CD4T.simulation = sim.CD4T,
+                        NK.real=sce.NK,  NK.simulation = sim.NK))
+comp$Plots$Means+xlab("")
+comp$Plots$Variances
+
+lb<- comp$Plots$LibrarySizes
+pz<- comp$Plots$ZerosGene
+ggarrange(lb, pz, heights = c(3,3), ncol = 1,  nrow = 2,
+          legend="top",align="hv")
+ggsave(paste("Figure2.4.1", "pdf",sep="."), width = 6, height=6)
+
+comp$Plots$MeanVar
+```
+
+
+
+```{r}
+sim1 <- splatSimulate(params.CD4T,nGenes = 5000, method = "groups",
+                     batchCells = 1000, 
+                     dropout.type = "none", out.prob = 0, 
+                     de.prob = c(0.1, 0.1),de.downProb = 0.2,
+                     seed =  8673, 
+                     group.prob = c(0.5, 0.5),
+                     de.facLoc = c(2,2),
+                     de.facScale = c(0.5, 0.5),
+                     verbose = FALSE)
+
+sim2 <- splatSimulate(params.CD4T,nGenes = 5000, method = "groups",
+                     batchCells = 1000, 
+                     dropout.type = "none", out.prob = 0, 
+                     de.prob = c(0.05, 0.05),de.downProb = 0.2,
+                     seed =  8673, 
+                     group.prob = c(0.5, 0.5),
+                     de.facLoc = c(1.5, 1.5),
+                     de.facScale = c(0.1, 0.1),
+                     verbose = FALSE)
+sim3 <- splatSimulate(params.CD4T,nGenes = 5000, method = "groups",
+                     batchCells = 1000, 
+                     dropout.type = "none", out.prob = 0, 
+                     de.prob = c(0.01, 0.01),de.downProb = 0.2,
+                     seed =  8673, 
+                     group.prob = c(0.5, 0.5),
+                     de.facLoc = c(1,1),
+                     de.facScale = c(0.05, 0.05),
+                     verbose = FALSE)
+true.sup1.g1<- row.names(sim1)[sim1@rowRanges@elementMetadata$DEFacGroup1 > 1]
+true.sup2.g1<- row.names(sim2)[sim2@rowRanges@elementMetadata$DEFacGroup1 > 1]
+true.sup3.g1<- row.names(sim3)[sim3@rowRanges@elementMetadata$DEFacGroup1 > 1]
+
+exp(2) 
+median(sim1@rowRanges@elementMetadata$DEFacGroup1[sim1@rowRanges@elementMetadata$DEFacGroup1>1])
+
+boxplot(sim1@rowRanges@elementMetadata$DEFacGroup1[match(true.sup1.g1, row.names(sim1))],
+        sim2@rowRanges@elementMetadata$DEFacGroup1[match(true.sup2.g1, row.names(sim2))],
+        sim3@rowRanges@elementMetadata$DEFacGroup1[match(true.sup3.g1, row.names(sim3))]
+        )
+
+pdf("Figure2.4.2_A.pdf")
+sim1.obs<-computeObservation(counts(sim1), sim1$Group, statistic = "os.t")
+dt<-decideTests(sim1.obs$fit.cont.eb.obs)
+tp.g1<- row.names(sim1.obs$fit.cont.eb.obs) %in% true.sup1.g1
+dt=decideTests(sim1.obs$fit.cont.eb.obs, coef=1)
+limma::plotMA(sim1.obs$fit.cont.eb.obs, coef=1, status = dt[,1],
+               main = "mean=2, sd=0.5, de.prop=0.1")
+sd(sim1.obs$summary.tb[true.sup1.g1, "logFC.g1"])
+mean(sim1.obs$summary.tb[true.sup1.g1, "logFC.g1"])
+dev.off()
+
+pdf("Figure2.4.2_B.pdf")
+sim2.obs<-computeObservation(counts(sim2), sim2$Group, statistic = "os.t")
+dt<-decideTests(sim2.obs$fit.cont.eb.obs)
+tp.g1<- row.names(sim2.obs$fit.cont.eb.obs) %in% true.sup2.g1
+dt=decideTests(sim2.obs$fit.cont.eb.obs, coef=1)
+limma::plotMA(sim2.obs$fit.cont.eb.obs, coef=1, status = dt[,1],
+              main = "mean=1.5, sd=0.1, de.prop=0.05")
+sd(sim2.obs$summary.tb[true.sup2.g1, "logFC.g1"])
+mean(sim2.obs$summary.tb[true.sup2.g1, "logFC.g1"])
+dev.off()
+pdf("Figure2.4.2_C.pdf")
+sim3.obs<-computeObservation(counts(sim3), sim3$Group, statistic = "os.t")
+dt<-decideTests(sim3.obs$fit.cont.eb.obs)
+tp.g1<- row.names(sim3.obs$fit.cont.eb.obs) %in% true.sup3.g1
+dt=decideTests(sim3.obs$fit.cont.eb.obs, coef=1)
+limma::plotMA(sim3.obs$fit.cont.eb.obs, coef=1, status = dt[,1], 
+              main = "mean=1, sd=0.05, de.prop=0.01")
+sd(sim3.obs$summary.tb[true.sup3.g1, "logFC.g1"])
+mean(sim3.obs$summary.tb[true.sup3.g1, "logFC.g1"])
+dev.off()
+
+```
+
+
+```{r}
+sim.CD4T <- splatSimulate(params.CD4T,nGenes = 5000, method = "groups",
+                     batchCells = 1000, 
+                     dropout.type = "none", out.prob = 0, 
+                     de.prob = c(0.01, 0.01),de.downProb = 0.2,
+                     seed =  8673, 
+                     group.prob = c(0.5, 0.5),
+                     de.facLoc = c(0.8,0.8),
+                     de.facScale = c(0.1, 0.1),
+                     verbose = FALSE)
+sim.CD4T <- logNormCounts(sim.CD4T)
+sim.CD4T <- runPCA(sim.CD4T)
+plotPCA(sim.CD4T, colour_by = "Group")+ggtitle("simulated CD4T cells")+ 
+  theme(plot.title = element_text(size = 20, face = "bold"))
+
+true.sup.g1<- row.names(sim.CD4T)[sim.CD4T@rowRanges@elementMetadata$DEFacGroup1 > 1]
+true.sup.g2<- row.names(sim.CD4T)[sim.CD4T@rowRanges@elementMetadata$DEFacGroup2 > 1]
+boxplot(sim.CD4T@rowRanges@elementMetadata$DEFacGroup1[match(true.sup.g1, row.names(sim.CD4T))],
+        sim.CD4T@rowRanges@elementMetadata$DEFacGroup2[match(true.sup.g2, row.names(sim.CD4T))])
+  
+boxplot(sim@rowRanges@elementMetadata$DEFacGroup1[match(true.sup.g1, row.names(sim))],
+        sim@rowRanges@elementMetadata$DEFacGroup2[match(true.sup.g2, row.names(sim))])
+  
+CD4T.obs<-computeObservation(counts(sim.CD4T), sim.CD4T$Group, 
+                   statistic = "os.t")
+sd(CD4T.obs$summary.tb[true.sup.g1, "logFC.g1"])
+sd(CD4T.obs$summary.tb[true.sup.g2, "logFC.g2"])
+
+median(sim@rowRanges@elementMetadata$DEFacGroup1[sim@rowRanges@elementMetadata$DEFacGroup1>1])
+
+```
+
+
+
+
+```{r}
+
+s<- 8673
+sim <- splatSimulate(curr_params, method = "groups", nGenes = 5000,
+                     batchCells = 1000, dropout.type = "none", out.prob = 0, 
+                     de.prob = c(0.02, 0.02),de.downProb = c(0, 0),
+                     group.prob = c(0.2, 0.8),
+                     seed = s, 
+                     de.facLoc = c(1.1,1.1),
+                     de.facScale = c(0.5, 0.5),
+                     verbose = FALSE)
+numzero.genes <- rowSums(counts(sim)==0)
+keep.genes <- numzero.genes < (ncol(counts(sim))-100)
+keep.genes <- setdiff(row.names(sim)[keep.genes],
+                      intersect(row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1], 
+                                row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]))
+sim<- sim[keep.genes, ]
+obs_res<- computeObs(counts(sim), factor(sim$Group),statistic= "os.t")
+
+tb<-obs_res$summary.tb
+true.sup.g1<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup1 > 1]
+true.sup.g2<- row.names(sim)[sim@rowRanges@elementMetadata$DEFacGroup2 > 1]
+plot(tb[true.sup.g1, "AveExpr"], tb[true.sup.g1, "logFC.g1"])
+plot(tb[true.sup.g2, "AveExpr"], tb[true.sup.g2, "logFC.g2"])
+boxplot(tb[true.sup.g1, "logFC.g1"], tb[true.sup.g2, "logFC.g2"])
+
+summary(tb[true.sup.g1,"AveExpr"])
+summary(tb[true.sup.g2,"AveExpr"])
+summary(tb[true.sup.g1,"logFC.g1"])
+summary(tb[true.sup.g2,"logFC.g2"])
+
+```
+
