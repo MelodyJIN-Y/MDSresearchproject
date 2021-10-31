@@ -1,0 +1,162 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+
+library(Seurat)
+library(dplyr)
+library(SingleCellExperiment)
+library(scater)
+library(splatter)
+library(reshape2)
+library(pROC)
+library(ggforce) 
+library(limma)
+library(tictoc)
+library(foreach)
+library(scales)
+library(ggplot2)
+library(ggpubr)
+library(ggExtra)
+library(cowplot)
+library(scales)
+
+pbmc.data<- readRDS("pbmc_pooled_sex.Rds")
+cm<- pbmc.data@assays$RNA@counts
+table(pbmc.data$individual)
+
+#subset_ind<- c("685_686", "689_690","691_692")
+#cm<- pbmc.data[, pbmc.data$individual %in% subset_ind ]@assays$RNA@counts
+cm<- pbmc.data[, pbmc.data$individual == "689_690"]@assays$RNA@counts
+dim(cm) # 32738  3402 (1789+1613) $32738  4907
+
+pbmc <- CreateSeuratObject(counts = cm,min.features = 500, min.cells = 5)
+
+
+cm<-pbmc@assays$RNA@counts
+ann.all<- readRDS("allpbmc.Rds")
+numzero.genes <- rowSums(cm==0)
+keep.genes <- numzero.genes < (ncol(cm)-10)
+all.keep <- cm[keep.genes,]
+ann.keep.all <- ann.all[keep.genes,]
+cm.processed<- all.keep
+
+
+# with one cell type from one individual
+selected_cells <- colnames(cm.processed[,pbmc.data[,colnames(cm.processed)]$predicted.celltype.l1 =="CD4 T"])
+cm.processed.r<- cm.processed[, match(selected_cells, colnames(cm.processed))]
+metadata <- data.frame(cell_type = pbmc.data[row.names(cm.processed.r),colnames(cm.processed.r)]$predicted.celltype.l1,
+                       ind = '689_690')
+
+sce <- SingleCellExperiment(list(counts=as.matrix(cm.processed.r)),colData=metadata)
+
+
+curr_params <- newSplatParams()
+# estimate the parameter 
+curr_params <- splatEstimate(sce,params = curr_params)
+```
+
+## Run time of the different methods
+```{r}
+
+perm_size_lst<- c(1000, 4000, 10000)
+n_cores_lst<- c(1, 5,8)
+
+num.cells<- c(1000, 5000)
+
+time_df<- as.data.frame(matrix(0, nrow=8, ncol=5))
+colnames(time_df)<- c("test.name","num.cells","1_core","5_core","8_core")
+time_df$test.name<- rep(c("limma.t_test","1000_permutations","4000_permutations",
+                       "10000_permutations"), 2)
+time_df[seq(1,4), "num.cells"] <- num.cells[1]
+time_df[seq(5,8), "num.cells"] <- num.cells[2]
+for (i in num.cells){
+    sim <- splatSimulate(curr_params, method = "groups", nGenes = 5000,
+                         batchCells = i, dropout.type = "none", 
+                         out.prob = 0, 
+                         de.prob = c(0.02, 0.02),de.downProb = c(0, 0),
+                         group.prob = c(0.5, 0.5),
+                         seed = 998, 
+                         de.facLoc = c(1.1, 1.1),
+                         de.facScale = c(0.5, 0.5),
+                         verbose = FALSE
+    )
+    for (perm_size in perm_size_lst){
+        for (nc in n_cores_lst){
+            tm_perm <- system.time(
+                {
+                    assign(paste("perms",perm_size,nc,"core", ncol(counts(sim)),"cells",
+                                 "permutation",sep="_"),
+                           runPermuation(counts(sim), group=factor(sim$Group), 
+                                         perm.size=perm_size, 
+                                         statistic = "os.t",
+                                         n.cores=nc))
+                })
+            
+           tm_limma<- system.time({ 
+               assign(paste("perms",perm_size,nc,"core", ncol(counts(sim)),"cells",
+                         "limma", sep="_"),
+                   computeObservation(counts(sim), cell.type=factor(sim$Group),
+                                      statistic= "os.t"))
+               })
+           time_df[time_df$test.name=="limma.t_test" & time_df$num.cells ==i,
+                   paste(nc,"core",sep="_") ]<- tm_limma[3]
+           time_df[time_df$test.name==paste(perm_size,"permutations",sep="_")&time_df$num.cells ==i,
+                   paste(nc,"core",sep="_")]<- tm_perm[3]
+        }
+    }
+}
+
+```
+
+## Object size
+```{r}
+
+perm_size_lst<- c(1000, 4000, 10000)
+nc=8
+num.cells<-c(1000, 5000)
+num.ct<- c(2,5,10)
+
+time_df<- as.data.frame(matrix(0, nrow=8, ncol=5))
+colnames(time_df)<- c("test.name","num.cells", "nct_2","nct_5","nct_10")
+time_df$test.name<- rep(c("limma.t_test","1000_permutations","4000_permutations",
+                       "10000_permutations"), 2)
+time_df[seq(1,4), "num.cells"] <- num.cells[1]
+time_df[seq(5,8), "num.cells"] <- num.cells[2]
+for (num.c in num.cells) {
+    for (nct in num.ct){
+        col_n<- paste("nct_",nct, sep="")
+        sim <- splatSimulate(curr_params, method = "groups", nGenes = 5000,
+                             batchCells = num.c, dropout.type = "none", 
+                             out.prob = 0, 
+                             group.prob = rep(1/nct, nct),
+                             seed = 998, 
+                             de.facLoc = rep(1.1, nct),
+                             de.facScale = rep(0.5, nct),
+                             verbose = FALSE)
+        for (perm_size in perm_size_lst){
+            assign(paste("perms",perm_size,nct,"ct", ncol(counts(sim)),"cells",
+                         "permutation",sep="_"),
+                   runPermuation(counts(sim), group=factor(sim$Group), 
+                                 perm.size=perm_size, 
+                                 statistic = "os.t",
+                                 n.cores=nc))
+            
+            assign(paste("perms",perm_size,nct,"ct", ncol(counts(sim)),"cells",
+                         "limma", sep="_"),
+                   computeObservation(counts(sim), cell.type=factor(sim$Group),
+                                      statistic= "os.t"))
+            time_df[time_df$test.name=="limma.t_test"&time_df$num.cells ==num.c,
+                    col_n ]<- format(object.size(get(paste("perms",perm_size,nct,"ct", ncol(counts(sim)),"cells",
+                         "limma", sep="_"))), unit="auto")
+            time_df[time_df$test.name==paste(perm_size,"permutations",sep="_")&time_df$num.cells ==num.c,
+                    col_n]<-format(object.size(get(paste("perms",perm_size,nct,"ct", ncol(counts(sim)),"cells",
+                                                         "permutation",sep="_"))$perm.array), unit="auto")
+        }
+    }
+    
+}
+
+```
